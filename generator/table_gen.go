@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -57,19 +56,12 @@ func GenerateTable() ([]byte, error) {
 	if err != nil {
 		fmt.Printf("Warning: Could not save tables.bin: %v\n", err)
 	} else {
+		// hideFile is now implemented in file_hidden_*.go
 		hideFile("tables.bin")
 	}
 
 	fmt.Printf("✓ Setup complete in %v\n\n", time.Since(startTime))
 	return buf, nil
-}
-
-// hideFile sets the hidden attribute on a file (Windows only)
-func hideFile(filename string) {
-	filenamePtr, err := syscall.UTF16PtrFromString(filename)
-	if err == nil {
-		syscall.SetFileAttributes(filenamePtr, syscall.FILE_ATTRIBUTE_HIDDEN)
-	}
 }
 
 func writeAffinePoint(buf []byte, index int, x, y *big.Int) {
