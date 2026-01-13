@@ -11,6 +11,7 @@ wallet.txt
 *.o
 *.a
 *.test
+!deps/lib/*.a
 
 # IDE
 .idea/
