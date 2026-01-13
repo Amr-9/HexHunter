@@ -16,13 +16,10 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: HexHunter.exe
             asset_name: HexHunter-windows-amd64.exe
           - os: ubuntu-latest
-            artifact_name: HexHunter
             asset_name: HexHunter-linux-amd64
           - os: macos-latest
-            artifact_name: HexHunter
             asset_name: HexHunter-macos-arm64
 
     steps:
@@ -32,7 +29,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.23'
 
       # Linux-specific: Install OpenCL headers/loaders
       - name: Install OpenCL (Linux)
@@ -44,7 +41,7 @@ jobs:
       # Build Command
       - name: Build
         run: |
-          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.artifact_name }} .
+          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} .
       
       # Upload Release Asset
       - name: Release
@@ -52,7 +49,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            ${{ matrix.artifact_name }}
+            ${{ matrix.asset_name }}
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
         env:
