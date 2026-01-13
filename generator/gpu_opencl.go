@@ -378,14 +378,17 @@ func (g *GPUGenerator) createBuffers() error {
 	return nil
 }
 
-// loadTable loads precomputed table from tables.bin
+// loadTable loads precomputed table from tables.bin, or generates it if missing
 func (g *GPUGenerator) loadTable() ([]byte, error) {
 	data, err := os.ReadFile("tables.bin")
 	if err != nil {
-		return nil, fmt.Errorf("tables.bin not found. Run 'go run cmd/gen_tables/main.go' first: %w", err)
+		if os.IsNotExist(err) {
+			return GenerateTable()
+		}
+		return nil, fmt.Errorf("error reading tables.bin: %w", err)
 	}
 	if len(data) != tableSize {
-		return nil, fmt.Errorf("invalid table size: got %d, expected %d", len(data), tableSize)
+		return nil, fmt.Errorf("invalid table size in tables.bin: got %d, expected %d. Please delete tables.bin and restart.", len(data), tableSize)
 	}
 	return data, nil
 }
