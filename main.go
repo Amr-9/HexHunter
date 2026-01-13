@@ -182,7 +182,7 @@ func selectGenerator() generator.Generator {
 	gpuInfo := ""
 	if gpus, err := generator.GetGPUInfo(); err == nil && len(gpus) > 0 {
 		gpuAvailable = true
-		gpuInfo = fmt.Sprintf("%s (%d CU)", gpus[0].Name, gpus[0].ComputeUnits)
+		gpuInfo = gpus[0].Name
 	}
 
 	fmt.Printf("    %s[1]%s 💻 CPU (%d cores)\n", colorCyan, colorReset, runtime.NumCPU())

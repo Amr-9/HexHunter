@@ -1,5 +1,6 @@
 <div align="center">
 
+
 # 🎯 HexHunter
 
 ### *The Ultimate Ethereum Vanity Address Generator*
@@ -11,6 +12,7 @@
 <img src="https://img.shields.io/badge/Speed-10M+%20addresses/sec-brightgreen?style=for-the-badge" alt="Speed">
 
 ---
+![HexHunter](Screenshots/hexhunter.gif)
 
 **Generate custom Ethereum addresses with your desired prefix or suffix at blazing speeds using GPU acceleration.**
 
@@ -107,6 +109,8 @@ Download the latest release from the [Releases](https://github.com/Amr-9/HexHunt
 ---
 
 ## ⚡ Performance
+
+![HexHunter Success](Screenshots/hexhunter_success.png)
 
 ### Benchmarks
 
@@ -226,6 +230,16 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## ⚠️ Disclaimer
 
 This software is provided for educational and research purposes only. The authors are not responsible for any misuse or for any damages resulting from the use of this software. Always ensure you are complying with local laws and regulations when using cryptocurrency-related software.
+
+**The developer is innocent before God of any illegal or malicious use of this tool.**
+**(أبرأ إلى الله من أي استخدام غير قانوني أو ضار لهذه الأداة)**
+
+---
+
+## 📜 License
+
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0).
+You are free to use, modify, and distribute this software, but you must keep it open-source and provide the same rights to others.
 
 ---
 
