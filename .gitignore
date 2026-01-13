@@ -1,0 +1,31 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+# Generated files
+tables.bin
+wallet.txt
+
+# Go build cache
+*.o
+*.a
+*.test
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temp files
+tmp/
+temp/
