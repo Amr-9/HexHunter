@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Ethereum zz Address Generator" -ForegroundColor Cyan  
+Write-Host "  Ethereum HexHunter Address Generator" -ForegroundColor Cyan  
 Write-Host "  Build Script v1.0" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
@@ -64,7 +64,7 @@ if ($CPU) {
     Write-Host "Building CPU-only version..." -ForegroundColor Yellow
     Write-Host ""
     
-    $outputName = "zz-cpu.exe"
+    $outputName = "HexHunter-cpu.exe"
     go build -ldflags "$ldflags" -o $outputName .
     
 } else {
@@ -92,7 +92,7 @@ if ($CPU) {
     Write-Host "[OK] libOpenCL.a found" -ForegroundColor Green
     Write-Host ""
     
-    $outputName = "zz1.exe"
+    $outputName = "HexHunter.exe"
     go build -tags opencl -ldflags "$ldflags" -o $outputName .
 }
 
