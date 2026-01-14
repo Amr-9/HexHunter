@@ -9,7 +9,7 @@
 [![OpenCL](https://img.shields.io/badge/OpenCL-GPU%20Accelerated-76B900?style=for-the-badge&logo=nvidia)](https://www.khronos.org/opencl/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20|%20Linux%20|%20macOS-blue?style=for-the-badge)]()
 
-<img src="https://img.shields.io/badge/Speed-10M+%20addresses/sec-brightgreen?style=for-the-badge" alt="Speed">
+<img src="https://img.shields.io/badge/Speed-40M+%20addresses/sec-brightgreen?style=for-the-badge" alt="Speed">
 
 ---
 ![HexHunter](Screenshots/hexhunter.gif)
@@ -22,17 +22,44 @@
 
 ---
 
+## 🤔 What is a Vanity Address?
+
+A **vanity address** is a custom Ethereum address that contains a specific pattern you choose. Instead of a random address like `0x7a3f...`, you can have:
+
+- `0xdeadbeef...` - Memorable hex words
+- `0x123456...` - Easy to recognize numbers  
+- `0xCAFE...` - Your favorite patterns
+- `0x...0000` - Addresses ending with zeros
+
+**Why use one?** Vanity addresses are easier to recognize, verify, and remember - reducing the risk of sending funds to the wrong address!
+
+---
+
+## 🌟 Why HexHunter?
+
+| Other Tools | HexHunter |
+|-------------|-----------|
+| ❌ Require Python/Node.js setup | ✅ Single standalone `.exe` file |
+| ❌ Complex command-line flags | ✅ Interactive menu - just type your pattern |
+| ❌ Pattern matching on CPU | ✅ In-kernel GPU matching (3x faster!) |
+| ❌ Write all results to memory | ✅ Zero memory writes until match found |
+| ❌ Outdated or unmaintained | ✅ Modern codebase with latest optimizations |
+
+---
+
 ## ✨ Features
 
 | Feature | Description |
 |---------|-------------|
-| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for maximum performance |
+| 🚀 **Zero Dependencies** | Just download and run - no Go, Python, or Node.js required! |
+| � **100% Offline** | Works completely offline - your keys never leave your device |
+| �🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec |
 | 💻 **CPU Fallback** | Fully functional multi-threaded CPU mode when GPU is unavailable |
-| 🔄 **Continuous Mode** | Generate multiple addresses without restarting the application |
-| 🎨 **Beautiful TUI** | Modern terminal interface with ASCII art and colorful output |
-| 🔐 **Cryptographically Secure** | Uses `crypto/rand` for secure random number generation |
+| 🔐 **Cryptographically Secure** | Uses OS-level secure random (`CryptGenRandom`/`/dev/urandom`) |
+| 🔄 **Continuous Mode** | Generate multiple addresses without restarting |
+| 🎨 **Beautiful TUI** | Modern terminal interface with real-time progress |
 | 💾 **Auto-Save** | Results automatically saved to `wallet.txt` |
-| ⚡ **Optimized Performance** | Batch processing with precomputed tables and batch inversion |
+| ⚡ **Self-Initializing** | Auto-generates optimization tables on first run |
 
 ---
 
@@ -47,24 +74,28 @@
   - AMD: AMD APP SDK or ROCm
   - Intel: Intel OpenCL Runtime
 
-### Build from Source
+### Option 1: Pre-built Binaries (Recommended)
+
+Just download and run - **no Go installation required!**
+
+1. Download the latest release from the [Releases](https://github.com/Amr-9/HexHunter/releases) page
+2. Run `HexHunter.exe`
+3. Done! 🎉
+
+### Option 2: Build from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/Amr-9/HexHunter.git
 cd HexHunter
 
-# Generate precomputed tables (required for GPU mode)
-go run cmd/gen_tables/main.go
-
 # Build the application
 ./build.ps1     # Windows
 ./build.sh      # Linux/macOS
 ```
 
-### Pre-built Binaries
+> **Note**: On first GPU run, HexHunter automatically generates a ~64MB optimization table (`tables.bin`). This takes a few seconds and only happens once.
 
-Download the latest release from the [Releases](https://github.com/Amr-9/HexHunter/releases) page.
 
 ---
 
@@ -96,16 +127,16 @@ Download the latest release from the [Releases](https://github.com/Amr-9/HexHunt
 
 ### Pattern Examples
 
-| Pattern Length | Example | Difficulty | Est. Time (15 MH/s) |
+| Pattern Length | Example | Difficulty | Est. Time (45 MH/s) |
 |:--------------:|:--------|:-----------|:--------------------|
-| **4 chars** | `0xdead...` | 1 in 65,536 | **Instant** (< 0.1 sec) |
-| **5 chars** | `0xdead1...` | 1 in 1,048,576 | **Instant** (~0.1 sec) |
-| **6 chars** | `0xdeadbe...` | 1 in 16,777,216 | **~1 second** |
-| **7 chars** | `0xdeadbea...` | 1 in 268,435,456 | **~18 seconds** |
-| **8 chars** | `0xdead...beef` | 1 in 4,294,967,296 | **~5 minutes** |
-| **9 chars** | `0xdeadbeef1...` | 1 in 68,719,476,736 | **~1.3 hours** |
-| **10 chars** | `0xdeadbeef12...` | 1 in 1,099,511,627,776 | **~20 hours** |
-| **11 chars** | `0xdeadbeef123...` | 1 in 17,592,186,044,416 | **~2 weeks** |
+| **4 chars** | `0xdead...` | 1 in 65,536 | **Instant** (< 0.01 sec) |
+| **5 chars** | `0xdead1...` | 1 in 1,048,576 | **Instant** (~0.02 sec) |
+| **6 chars** | `0xdeadbe...` | 1 in 16,777,216 | **~0.4 seconds** |
+| **7 chars** | `0xdeadbea...` | 1 in 268,435,456 | **~6 seconds** |
+| **8 chars** | `0xdead...beef` | 1 in 4,294,967,296 | **~1.5 minutes** |
+| **9 chars** | `0xdeadbeef1...` | 1 in 68,719,476,736 | **~25 minutes** |
+| **10 chars** | `0xdeadbeef12...` | 1 in 1,099,511,627,776 | **~7 hours** |
+| **11 chars** | `0xdeadbeef123...` | 1 in 17,592,186,044,416 | **~4.5 days** |
 ---
 
 ## ⚡ Performance
@@ -116,8 +147,8 @@ Download the latest release from the [Releases](https://github.com/Amr-9/HexHunt
 
 | Mode | Hardware | Speed |
 |------|----------|-------|
-| GPU | NVIDIA RTX 4090 | ~80 MH/s |
-| GPU | NVIDIA RTX 4060 | ~15 MH/s |
+| GPU | NVIDIA RTX 4090 | ~240 MH/s |
+| GPU | NVIDIA RTX 4060 | ~45 MH/s |
 | CPU | Intel i9-14900K | ~600 KH/s |
 | CPU | AMD Ryzen 9 7950X | ~550 KH/s |
 
@@ -141,14 +172,14 @@ Download the latest release from the [Releases](https://github.com/Amr-9/HexHunt
 │                        HexHunter                            │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐ │
-│  │   CPU Host  │───▶│  GPU Kernel │───▶│  Address Check  │ │
-│  │  (Go + CGO) │    │  (OpenCL)   │    │    (Host)       │ │
+│  │   CPU Host  │───▶│  GPU Kernel │───▶│ In-Kernel Match │ │
+│  │  (Go + CGO) │    │  (OpenCL)   │    │ (Prefix/Suffix) │ │
 │  └─────────────┘    └─────────────┘    └─────────────────┘ │
 │         │                  │                    │           │
 │         ▼                  ▼                    ▼           │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐ │
-│  │ Random Base │    │ EC Point    │    │  Pattern Match  │ │
-│  │    Key      │    │ Multiply    │    │  Prefix/Suffix  │ │
+│  │ Random Base │    │ EC Point    │    │   Only Write    │ │
+│  │    Key      │    │  + Keccak   │    │   On Match! ⚡  │ │
 │  └─────────────┘    └─────────────┘    └─────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -162,7 +193,7 @@ Download the latest release from the [Releases](https://github.com/Amr-9/HexHunt
    - Compute `P[i] = BasePoint + Table[i]`
    - Apply Keccak-256 hash
    - Extract last 20 bytes as Ethereum address
-4. **Pattern Matching**: Check prefix/suffix on host
+4. **In-Kernel Matching**: Check prefix/suffix inside GPU (zero memory writes until match!)
 5. **Iterate**: Increment base key and repeat
 
 ---

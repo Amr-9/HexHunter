@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	version    = "0.1" // Updated for GPU support
+	version    = "0.2" // Updated for GPU support
 	outputFile = "wallet.txt"
 	updateRate = 33 * time.Millisecond // Faster updates for smoother animation
 )
