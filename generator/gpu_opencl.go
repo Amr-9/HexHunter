@@ -45,7 +45,7 @@ const (
 	// Batch size = Table size (2^20 = 1,048,576)
 	globalWorkSize = 1 << 20
 	localWorkSize  = 256
-	outputSize     = globalWorkSize * 20 // 20 bytes per address
+	outputSize     = 64                  // Only single result now (was 20MB!)
 	tableSize      = globalWorkSize * 64 // 64 bytes per point (Affine)
 )
 
@@ -61,8 +61,11 @@ type GPUGenerator struct {
 	// buffers
 	bufBasePoint C.cl_mem // BasePoint (Jacobian, 96 bytes)
 	bufTable     C.cl_mem // Precomputed table (64 MB)
-	bufOutput    C.cl_mem // Output addresses (20 MB)
+	bufOutput    C.cl_mem // Output address (64 bytes - single result!)
 	bufFlag      C.cl_mem // Found flag
+	bufFoundGid  C.cl_mem // Found GID
+	bufTargetPfx C.cl_mem // Target prefix pattern
+	bufTargetSfx C.cl_mem // Target suffix pattern
 
 	// secp256k1 curve for CPU calculations
 	curve *secp256k1.BitCurve
@@ -74,6 +77,8 @@ type GPUGenerator struct {
 	// matching
 	prefixBytes []byte
 	suffixBytes []byte
+	prefixIsOdd bool // true if original prefix hex length was odd
+	suffixIsOdd bool // true if original suffix hex length was odd
 }
 
 // GPUInfo contains information about an available GPU device
@@ -120,10 +125,17 @@ func (g *GPUGenerator) Start(ctx context.Context, config *Config) (<-chan Result
 	atomic.StoreUint64(&g.attempts, 0)
 
 	if config.Prefix != "" {
+		g.prefixIsOdd = len(config.Prefix)%2 == 1 // Track before padding!
 		g.prefixBytes, _ = hex.DecodeString(padHex(config.Prefix))
 	}
 	if config.Suffix != "" {
-		g.suffixBytes, _ = hex.DecodeString(padHex(config.Suffix))
+		g.suffixIsOdd = len(config.Suffix)%2 == 1 // Track before padding!
+		// For suffix: pad at BEGINNING (not end!) so low nibble is correct
+		paddedSuffix := config.Suffix
+		if g.suffixIsOdd {
+			paddedSuffix = "0" + config.Suffix // Pad at start for low nibble
+		}
+		g.suffixBytes, _ = hex.DecodeString(paddedSuffix)
 	}
 
 	go g.runGPU(ctx, resultChan, config)
@@ -138,8 +150,10 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, con
 	}
 	defer g.releaseBuffers()
 
-	// Host buffer for reading back results
-	hostOutput := make([]byte, outputSize)
+	// Host buffers for reading results (minimal now!)
+	hostOutput := make([]byte, 20) // Only 20 bytes for single address
+	var foundFlag uint32
+	var foundGid uint32
 
 	// Generate random starting private key
 	baseKeyBytes := make([]byte, 32)
@@ -148,16 +162,31 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, con
 
 	batchSizeInt := big.NewInt(globalWorkSize)
 	var ret C.cl_int
+	zero := uint32(0)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			// 1. Compute BasePoint = base * G on CPU (in Jacobian form)
+			// 1. Reset found_flag and found_gid before each batch
+			ret = C.clEnqueueWriteBuffer(g.queue, g.bufFlag, C.CL_TRUE, 0, 4,
+				unsafe.Pointer(&zero), 0, nil, nil)
+			if ret != C.CL_SUCCESS {
+				log.Printf("Failed to reset flag: %d", ret)
+				return
+			}
+			ret = C.clEnqueueWriteBuffer(g.queue, g.bufFoundGid, C.CL_TRUE, 0, 4,
+				unsafe.Pointer(&zero), 0, nil, nil)
+			if ret != C.CL_SUCCESS {
+				log.Printf("Failed to reset gid: %d", ret)
+				return
+			}
+
+			// 2. Compute BasePoint = base * G on CPU (in Jacobian form)
 			basePointBytes := g.computeBasePointJacobian(baseInt)
 
-			// 2. Upload BasePoint to GPU
+			// 3. Upload BasePoint to GPU
 			ret = C.clEnqueueWriteBuffer(g.queue, g.bufBasePoint, C.CL_TRUE, 0, 96,
 				unsafe.Pointer(&basePointBytes[0]), 0, nil, nil)
 			if ret != C.CL_SUCCESS {
@@ -165,7 +194,7 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, con
 				return
 			}
 
-			// 3. Run Kernel
+			// 4. Run Kernel
 			globalSize := C.size_t(globalWorkSize)
 			localSize := C.size_t(localWorkSize)
 			ret = C.clEnqueueNDRangeKernel(g.queue, g.kernel, 1, nil, &globalSize, &localSize, 0, nil, nil)
@@ -174,21 +203,48 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, con
 				return
 			}
 
-			// 4. Read results back
-			ret = C.clEnqueueReadBuffer(g.queue, g.bufOutput, C.CL_TRUE, 0, C.size_t(outputSize),
-				unsafe.Pointer(&hostOutput[0]), 0, nil, nil)
+			// 5. Read ONLY the flag (4 bytes!) - this is the key optimization
+			ret = C.clEnqueueReadBuffer(g.queue, g.bufFlag, C.CL_TRUE, 0, 4,
+				unsafe.Pointer(&foundFlag), 0, nil, nil)
 			if ret != C.CL_SUCCESS {
-				log.Printf("Read buffer failed: %d", ret)
+				log.Printf("Read flag failed: %d", ret)
 				return
 			}
 
-			// 5. Check matches on CPU
-			if found, res := g.checkBatch(hostOutput, baseInt, config); found {
-				resultChan <- res
+			// 6. If found, read the result and return
+			if foundFlag != 0 {
+				// Read found GID
+				ret = C.clEnqueueReadBuffer(g.queue, g.bufFoundGid, C.CL_TRUE, 0, 4,
+					unsafe.Pointer(&foundGid), 0, nil, nil)
+				if ret != C.CL_SUCCESS {
+					log.Printf("Read gid failed: %d", ret)
+					return
+				}
+
+				// Read address from output buffer
+				ret = C.clEnqueueReadBuffer(g.queue, g.bufOutput, C.CL_TRUE, 0, 20,
+					unsafe.Pointer(&hostOutput[0]), 0, nil, nil)
+				if ret != C.CL_SUCCESS {
+					log.Printf("Read output failed: %d", ret)
+					return
+				}
+
+				// Reconstruct Private Key: base + found_gid
+				foundKey := new(big.Int).Add(baseInt, big.NewInt(int64(foundGid)))
+				privBytes := pad32(foundKey.Bytes())
+
+				// Verify on CPU
+				pk, _ := crypto.ToECDSA(privBytes)
+				pub := crypto.PubkeyToAddress(pk.PublicKey)
+
+				resultChan <- Result{
+					Address:    pub.Hex(),
+					PrivateKey: hex.EncodeToString(privBytes),
+				}
 				return
 			}
 
-			// 6. Advance stats and base key
+			// 7. Advance stats and base key
 			atomic.AddUint64(&g.attempts, uint64(globalWorkSize))
 			baseInt.Add(baseInt, batchSizeInt)
 		}
@@ -220,58 +276,6 @@ func (g *GPUGenerator) computeBasePointJacobian(base *big.Int) []byte {
 	result[64] = 1 // Z = 1
 
 	return result
-}
-
-// checkBatch verifies addresses on CPU
-func (g *GPUGenerator) checkBatch(output []byte, baseInt *big.Int, config *Config) (bool, Result) {
-	prefixStr := config.Prefix
-	suffixStr := config.Suffix
-
-	for i := 0; i < globalWorkSize; i++ {
-		offset := i * 20
-		addrBytes := output[offset : offset+20]
-
-		// Skip empty addresses (point at infinity)
-		if i == 0 {
-			allZero := true
-			for _, b := range addrBytes {
-				if b != 0 {
-					allZero = false
-					break
-				}
-			}
-			if allZero {
-				continue
-			}
-		}
-
-		// Check Prefix and Suffix
-		addrHex := hex.EncodeToString(addrBytes)
-		if len(prefixStr) > 0 && len(addrHex) >= len(prefixStr) {
-			if addrHex[:len(prefixStr)] != prefixStr {
-				continue
-			}
-		}
-		if len(suffixStr) > 0 && len(addrHex) >= len(suffixStr) {
-			if addrHex[len(addrHex)-len(suffixStr):] != suffixStr {
-				continue
-			}
-		}
-
-		// Found! Reconstruct Private Key = base + i
-		foundKey := new(big.Int).Add(baseInt, big.NewInt(int64(i)))
-		privBytes := pad32(foundKey.Bytes())
-
-		// Verify on CPU
-		pk, _ := crypto.ToECDSA(privBytes)
-		pub := crypto.PubkeyToAddress(pk.PublicKey)
-
-		return true, Result{
-			Address:    pub.Hex(),
-			PrivateKey: hex.EncodeToString(privBytes),
-		}
-	}
-	return false, Result{}
 }
 
 func (g *GPUGenerator) initOpenCL() error {
@@ -357,7 +361,7 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufTable failed: %d", ret)
 	}
 
-	// 3. Output (20 MB)
+	// 3. Output (64 bytes - single result only!)
 	g.bufOutput = C.clCreateBuffer(g.context, C.CL_MEM_WRITE_ONLY, C.size_t(outputSize), nil, &ret)
 	if ret != C.CL_SUCCESS {
 		return fmt.Errorf("bufOutput failed: %d", ret)
@@ -369,11 +373,55 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufFlag failed: %d", ret)
 	}
 
-	// Set Kernel Args
+	// 5. Found GID (4 bytes)
+	g.bufFoundGid = C.clCreateBuffer(g.context, C.CL_MEM_READ_WRITE, 4, nil, &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufFoundGid failed: %d", ret)
+	}
+
+	// 6. Target Prefix (20 bytes max, using __constant memory)
+	prefixData := make([]byte, 20)
+	copy(prefixData, g.prefixBytes)
+	g.bufTargetPfx = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
+		20, unsafe.Pointer(&prefixData[0]), &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufTargetPfx failed: %d", ret)
+	}
+
+	// 7. Target Suffix (20 bytes max, using __constant memory)
+	suffixData := make([]byte, 20)
+	copy(suffixData, g.suffixBytes)
+	g.bufTargetSfx = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
+		20, unsafe.Pointer(&suffixData[0]), &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufTargetSfx failed: %d", ret)
+	}
+
+	// Set Kernel Args (12 total)
+	prefixLen := C.uint(len(g.prefixBytes))
+	suffixLen := C.uint(len(g.suffixBytes))
+
+	// Convert bool to uint for kernel
+	prefixOdd := C.uint(0)
+	if g.prefixIsOdd {
+		prefixOdd = 1
+	}
+	suffixOdd := C.uint(0)
+	if g.suffixIsOdd {
+		suffixOdd = 1
+	}
+
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufBasePoint)), unsafe.Pointer(&g.bufBasePoint))
 	C.clSetKernelArg(g.kernel, 1, C.size_t(unsafe.Sizeof(g.bufTable)), unsafe.Pointer(&g.bufTable))
 	C.clSetKernelArg(g.kernel, 2, C.size_t(unsafe.Sizeof(g.bufOutput)), unsafe.Pointer(&g.bufOutput))
 	C.clSetKernelArg(g.kernel, 3, C.size_t(unsafe.Sizeof(g.bufFlag)), unsafe.Pointer(&g.bufFlag))
+	C.clSetKernelArg(g.kernel, 4, C.size_t(unsafe.Sizeof(g.bufFoundGid)), unsafe.Pointer(&g.bufFoundGid))
+	C.clSetKernelArg(g.kernel, 5, C.size_t(unsafe.Sizeof(g.bufTargetPfx)), unsafe.Pointer(&g.bufTargetPfx))
+	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
+	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(g.bufTargetSfx)), unsafe.Pointer(&g.bufTargetSfx))
+	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(prefixOdd)), unsafe.Pointer(&prefixOdd))
+	C.clSetKernelArg(g.kernel, 10, C.size_t(unsafe.Sizeof(suffixOdd)), unsafe.Pointer(&suffixOdd))
 
 	return nil
 }
@@ -405,6 +453,15 @@ func (g *GPUGenerator) releaseBuffers() {
 	}
 	if g.bufFlag != nil {
 		C.clReleaseMemObject(g.bufFlag)
+	}
+	if g.bufFoundGid != nil {
+		C.clReleaseMemObject(g.bufFoundGid)
+	}
+	if g.bufTargetPfx != nil {
+		C.clReleaseMemObject(g.bufTargetPfx)
+	}
+	if g.bufTargetSfx != nil {
+		C.clReleaseMemObject(g.bufTargetSfx)
 	}
 }
 

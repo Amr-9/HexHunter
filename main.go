@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,7 +18,7 @@ import (
 const (
 	version    = "0.1" // Updated for GPU support
 	outputFile = "wallet.txt"
-	updateRate = 100 * time.Millisecond // Faster updates for smoother animation
+	updateRate = 33 * time.Millisecond // Faster updates for smoother animation
 )
 
 func main() {
@@ -61,6 +62,7 @@ func main() {
 
 		// Print search info
 		printSearchInfo(config, gen)
+		difficulty := estimateDifficulty(prefix, suffix)
 
 		// Start the generator
 		resultChan, err := gen.Start(ctx, config)
@@ -108,7 +110,7 @@ func main() {
 			case <-ticker.C:
 				// Update progress display with animation
 				stats := gen.Stats()
-				printProgress(stats, frame)
+				printProgress(stats, difficulty, frame)
 				frame++
 
 			case <-sigChan:
@@ -266,23 +268,36 @@ func printSearchInfo(config *generator.Config, gen generator.Generator) {
 }
 
 // printProgress shows animated progress bar
-func printProgress(stats generator.Stats, frame int) {
+func printProgress(stats generator.Stats, difficulty uint64, frame int) {
 	// Spinner animation with colors
 	spinners := []string{"◐", "◓", "◑", "◒"}
 	spinner := spinners[frame%len(spinners)]
 
-	// Speed bar (visual representation)
-	barWidth := 15
-	hashRate := stats.HashRate
-	maxRate := 100000000.0 // 100 MH/s max for GPU
-	filled := int((hashRate / maxRate) * float64(barWidth))
+	// Progress bar (probability based)
+	// Formula: 1 - 0.5^(2 * attempts / difficulty)
+	// At attempts = difficulty/2, progress = 1 - 0.5^1 = 0.5 (50%)
+	// Asymptotically approaches 1.0, slowing down as it fills
+
+	attempts := float64(stats.Attempts)
+	diff := float64(difficulty)
+	if diff == 0 {
+		diff = 1
+	}
+
+	ratio := attempts / diff
+	// We want 50% bar at 50% probability (attempts = difficulty/2, so ratio = 0.5)
+	// 0.5 = 1 - 0.5^(k * 0.5) => 0.5 = 0.5^(0.5k) => 1 = 0.5k => k = 2
+	progress := 1.0 - math.Pow(0.5, 2.0*ratio)
+
+	barWidth := 40
+	filled := int(progress * float64(barWidth))
 	if filled > barWidth {
 		filled = barWidth
 	}
 	bar := strings.Repeat("▓", filled) + strings.Repeat("░", barWidth-filled)
 
 	// Format speed
-	speedStr := formatHashRate(hashRate)
+	speedStr := formatHashRate(stats.HashRate)
 
 	// Format output with colors
 	fmt.Printf("\r    %s%s%s %s%s%s %s%s%s │ %s%s%s │ %s",

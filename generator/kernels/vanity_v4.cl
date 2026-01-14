@@ -174,8 +174,15 @@ void keccak_f1600(ulong *st) {
 __kernel void compute_address(
     __global const uchar *base_point,
     __global const uchar *table,
-    __global uchar *output,
-    __global uint *found_flag
+    __global uchar *output,              // Only 64 bytes now (single result)
+    __global uint *found_flag,
+    __global uint *found_gid,            // Store winning GID
+    __constant uchar *target_prefix,     // Prefix pattern (up to 20 bytes)
+    uint prefix_len,                     // Prefix length in bytes (rounded up)
+    __constant uchar *target_suffix,     // Suffix pattern (up to 20 bytes)  
+    uint suffix_len,                     // Suffix length in bytes (rounded up)
+    uint prefix_is_odd,                  // 1 if prefix hex length was odd
+    uint suffix_is_odd                   // 1 if suffix hex length was odd
 ) {
     uint gid = get_global_id(0);
     uint lid = get_local_id(0);
@@ -348,7 +355,55 @@ __kernel void compute_address(
     state[16] ^= 0x8000000000000000UL;
     keccak_f1600(state);
     
-    // 8. Output address
+    // 8. In-Kernel Pattern Matching with Nibble Support
     uchar *h = (uchar*)state;
-    for(int i=0; i<20; i++) output[gid*20 + i] = h[12+i];
+    bool match = true;
+    
+    // Check prefix with nibble support
+    for (uint i = 0; i < prefix_len && match; i++) {
+        uchar addr_byte = h[12 + i];
+        uchar target_byte = target_prefix[i];
+        
+        // Last byte of odd-length prefix: compare HIGH nibble only (0xF0)
+        if (i == prefix_len - 1 && prefix_is_odd) {
+            if ((addr_byte & 0xF0) != (target_byte & 0xF0)) {
+                match = false;
+            }
+        } else {
+            if (addr_byte != target_byte) {
+                match = false;
+            }
+        }
+    }
+    
+    // Check suffix with nibble support
+    // Address bytes 12-31 (20 bytes), suffix matches end
+    for (uint i = 0; i < suffix_len && match; i++) {
+        uint addr_idx = 32 - suffix_len + i;  // Correct index from end
+        uchar addr_byte = h[addr_idx];
+        uchar target_byte = target_suffix[i];
+        
+        // First byte of odd-length suffix: compare LOW nibble only (0x0F)
+        if (i == 0 && suffix_is_odd) {
+            if ((addr_byte & 0x0F) != (target_byte & 0x0F)) {
+                match = false;
+            }
+        } else {
+            if (addr_byte != target_byte) {
+                match = false;
+            }
+        }
+    }
+    
+    // 9. Write ONLY if matched (~99.999% reduction in memory writes!)
+    if (match) {
+        uint old_flag = atomic_xchg(found_flag, 1);
+        // Only first winner writes the result
+        if (old_flag == 0) {
+            atomic_xchg(found_gid, gid);
+            for(int i = 0; i < 20; i++) {
+                output[i] = h[12 + i];
+            }
+        }
+    }
 }
