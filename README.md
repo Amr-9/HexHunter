@@ -52,8 +52,8 @@ A **vanity address** is a custom Ethereum address that contains a specific patte
 | Feature | Description |
 |---------|-------------|
 | 🚀 **Zero Dependencies** | Just download and run - no Go, Python, or Node.js required! |
-| � **100% Offline** | Works completely offline - your keys never leave your device |
-| �🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec |
+| 🔒 **100% Offline** | Works completely offline - your keys never leave your device |
+| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec |
 | 💻 **CPU Fallback** | Fully functional multi-threaded CPU mode when GPU is unavailable |
 | 🔐 **Cryptographically Secure** | Uses OS-level secure random (`CryptGenRandom`/`/dev/urandom`) |
 | 🔄 **Continuous Mode** | Generate multiple addresses without restarting |

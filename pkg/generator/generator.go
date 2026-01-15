@@ -1,22 +1,45 @@
-// Package generator defines the interface for Ethereum vanity address generation.
-// This design allows easy swapping between CPU and GPU implementations.
+// Package generator defines the interface for vanity address generation.
+// This design allows easy swapping between CPU and GPU implementations,
+// and supports multiple blockchain networks (Ethereum, Solana).
 package generator
 
 import (
 	"context"
 )
 
+// Network represents the blockchain network for address generation.
+type Network int
+
+const (
+	Ethereum Network = iota // Ethereum (secp256k1, Keccak-256, Hex)
+	Solana                  // Solana (Ed25519, Base58)
+)
+
+// String returns the network name.
+func (n Network) String() string {
+	switch n {
+	case Ethereum:
+		return "Ethereum"
+	case Solana:
+		return "Solana"
+	default:
+		return "Unknown"
+	}
+}
+
 // Config holds the configuration for vanity address generation.
 type Config struct {
-	Prefix  string // Desired address prefix (without 0x)
-	Suffix  string // Desired address suffix
-	Workers int    // Number of concurrent workers
+	Network Network // Target network (Ethereum, Solana)
+	Prefix  string  // Desired address prefix
+	Suffix  string  // Desired address suffix
+	Workers int     // Number of concurrent workers
 }
 
 // Result contains a successfully found vanity address and its private key.
 type Result struct {
-	Address    string // Ethereum address (with 0x prefix)
-	PrivateKey string // Private key in hex format
+	Network    Network // Network the address belongs to
+	Address    string  // Formatted address (0x... for ETH, Base58 for SOL)
+	PrivateKey string  // Private key (Hex for ETH, Base58 for SOL)
 }
 
 // Stats holds real-time performance statistics.

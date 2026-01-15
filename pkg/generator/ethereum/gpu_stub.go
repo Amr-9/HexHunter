@@ -1,11 +1,13 @@
 //go:build !opencl
 // +build !opencl
 
-package generator
+package ethereum
 
 import (
 	"context"
 	"fmt"
+
+	"github.com/ethvanity/pkg/generator"
 )
 
 // GPUGenerator is a stub for non-OpenCL builds.
@@ -32,12 +34,12 @@ func (g *GPUGenerator) Name() string {
 }
 
 // Stats returns empty stats.
-func (g *GPUGenerator) Stats() Stats {
-	return Stats{}
+func (g *GPUGenerator) Stats() generator.Stats {
+	return generator.Stats{}
 }
 
 // Start returns an error as GPU is not available.
-func (g *GPUGenerator) Start(ctx context.Context, config *Config) (<-chan Result, error) {
+func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-chan generator.Result, error) {
 	return nil, fmt.Errorf("GPU support not compiled")
 }
 

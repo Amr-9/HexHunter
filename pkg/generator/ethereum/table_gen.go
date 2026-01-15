@@ -1,7 +1,7 @@
 //go:build opencl
 // +build opencl
 
-package generator
+package ethereum
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethvanity/pkg/generator"
 )
 
 // GenerateTable generates the precomputed table for GPU acceleration
@@ -56,8 +57,8 @@ func GenerateTable() ([]byte, error) {
 	if err != nil {
 		fmt.Printf("Warning: Could not save tables.bin: %v\n", err)
 	} else {
-		// hideFile is now implemented in file_hidden_*.go
-		hideFile("tables.bin")
+		// HideFile is now implemented in file_hidden_*.go
+		generator.HideFile("tables.bin")
 	}
 
 	fmt.Printf("✓ Setup complete in %v\n\n", time.Since(startTime))

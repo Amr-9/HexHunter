@@ -29,7 +29,7 @@ $env:CC = "gcc"
 Write-Host "Building application (HexHunter.exe)..." -ForegroundColor Yellow
 
 # Try building with OpenCL tags
-go build -tags opencl -trimpath -ldflags="-s -w" -o HexHunter.exe .
+go build -tags opencl -trimpath -ldflags="-s -w" -o HexHunter.exe ./cmd/hexhunter
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Build successful!" -ForegroundColor Green
@@ -47,7 +47,7 @@ if ($LASTEXITCODE -eq 0) {
     
     # Fallback to CPU only
     $env:CGO_ENABLED = "0"
-    go build -trimpath -ldflags="-s -w" -o HexHunter.exe .
+    go build -trimpath -ldflags="-s -w" -o HexHunter.exe ./cmd/hexhunter
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "CPU-only Build successful!" -ForegroundColor Green

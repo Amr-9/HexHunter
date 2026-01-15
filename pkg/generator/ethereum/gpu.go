@@ -1,11 +1,11 @@
 //go:build opencl
 // +build opencl
 
-package generator
+package ethereum
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../deps/opencl-headers
-#cgo windows LDFLAGS: -L${SRCDIR}/../deps/lib -lOpenCL
+#cgo CFLAGS: -I${SRCDIR}/../../../deps/opencl-headers
+#cgo windows LDFLAGS: -L${SRCDIR}/../../../deps/lib -lOpenCL
 #cgo linux LDFLAGS: -lOpenCL
 #cgo darwin LDFLAGS: -framework OpenCL
 
@@ -36,18 +36,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethvanity/pkg/generator"
 )
 
 //go:embed kernels/vanity_v4.cl
 var kernelSourceV3 embed.FS
-
-const (
-	// Batch size = Table size (2^20 = 1,048,576)
-	globalWorkSize = 1 << 20
-	localWorkSize  = 256
-	outputSize     = 64                  // Only single result now (was 20MB!)
-	tableSize      = globalWorkSize * 64 // 64 bytes per point (Affine)
-)
 
 // GPUGenerator implements the Generator interface using OpenCL GPU acceleration.
 type GPUGenerator struct {
@@ -105,22 +98,22 @@ func (g *GPUGenerator) Name() string {
 	return "GPU (OpenCL - v4 BatchInv)"
 }
 
-func (g *GPUGenerator) Stats() Stats {
+func (g *GPUGenerator) Stats() generator.Stats {
 	attempts := atomic.LoadUint64(&g.attempts)
 	elapsed := time.Since(g.startTime).Seconds()
 	var hashRate float64
 	if elapsed > 0 {
 		hashRate = float64(attempts) / elapsed
 	}
-	return Stats{
+	return generator.Stats{
 		Attempts:    attempts,
 		HashRate:    hashRate,
 		ElapsedSecs: elapsed,
 	}
 }
 
-func (g *GPUGenerator) Start(ctx context.Context, config *Config) (<-chan Result, error) {
-	resultChan := make(chan Result, 1)
+func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-chan generator.Result, error) {
+	resultChan := make(chan generator.Result, 1)
 	g.startTime = time.Now()
 	atomic.StoreUint64(&g.attempts, 0)
 
@@ -142,7 +135,7 @@ func (g *GPUGenerator) Start(ctx context.Context, config *Config) (<-chan Result
 	return resultChan, nil
 }
 
-func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, config *Config) {
+func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.Result, config *generator.Config) {
 	// Create buffers
 	if err := g.createBuffers(); err != nil {
 		log.Printf("GPU Buffer Error: %v", err)
@@ -237,7 +230,7 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- Result, con
 				pk, _ := crypto.ToECDSA(privBytes)
 				pub := crypto.PubkeyToAddress(pk.PublicKey)
 
-				resultChan <- Result{
+				resultChan <- generator.Result{
 					Address:    pub.Hex(),
 					PrivateKey: hex.EncodeToString(privBytes),
 				}

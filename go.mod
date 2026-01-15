@@ -2,7 +2,10 @@ module github.com/ethvanity
 
 go 1.24.9
 
-require github.com/ethereum/go-ethereum v1.16.7
+require (
+	github.com/ethereum/go-ethereum v1.16.7
+	github.com/mr-tron/base58 v1.2.0
+)
 
 require (
 	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251001021608-1fe7b43fc4d6 // indirect
