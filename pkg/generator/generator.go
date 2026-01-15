@@ -14,6 +14,7 @@ const (
 	Ethereum Network = iota // Ethereum (secp256k1, Keccak-256, Hex)
 	Solana                  // Solana (Ed25519, Base58)
 	Aptos                   // Aptos (Ed25519, SHA3-256, Hex)
+	Sui                     // Sui (Ed25519, Blake2b-256, Hex)
 )
 
 // String returns the network name.
@@ -25,6 +26,8 @@ func (n Network) String() string {
 		return "Solana"
 	case Aptos:
 		return "Aptos"
+	case Sui:
+		return "Sui"
 	default:
 		return "Unknown"
 	}

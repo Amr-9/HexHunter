@@ -123,6 +123,8 @@ func PrintSuccess(result generator.Result, elapsed time.Duration, attempts uint6
 		networkLabel = "◎ SOLANA ADDRESS"
 	case generator.Aptos:
 		networkLabel = "◆ APTOS ADDRESS"
+	case generator.Sui:
+		networkLabel = "◇ SUI ADDRESS"
 	default:
 		networkLabel = "⟠ ETHEREUM ADDRESS"
 	}

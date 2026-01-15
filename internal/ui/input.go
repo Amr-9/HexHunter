@@ -68,6 +68,8 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 	} else {
 		fmt.Printf("\n")
 	}
+	fmt.Printf("    %s[4]%s ◇ Sui (SUI) %s- 0x prefix, Hex%s", ColorCyan, ColorReset, ColorDim, ColorReset)
+	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
 
 	fmt.Printf("\n    %s→%s ", ColorGreen, ColorReset)
 	networkChoice, _ := reader.ReadString('\n')
@@ -108,6 +110,11 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 		} else {
 			gen = cpu.NewCPUGenerator(0)
 		}
+	case "4": // Sui
+		network = generator.Sui
+		fmt.Printf("    %s✓ Sui Selected%s\n\n", ColorGreen, ColorReset)
+		// Sui is CPU-only for now
+		gen = cpu.NewCPUGenerator(0)
 	default: // Ethereum
 		network = generator.Ethereum
 		fmt.Printf("    %s✓ Ethereum Selected%s\n\n", ColorGreen, ColorReset)
@@ -137,7 +144,7 @@ func GetInputFromUser(network generator.Network) (string, string) {
 	switch network {
 	case generator.Solana:
 		return getSolanaInput(reader)
-	case generator.Aptos:
+	case generator.Aptos, generator.Sui:
 		return getAptosInput(reader)
 	default:
 		return getEthereumInput(reader)

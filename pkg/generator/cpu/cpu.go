@@ -16,6 +16,7 @@ import (
 	"github.com/ethvanity/pkg/generator/aptos"
 	"github.com/ethvanity/pkg/generator/ethereum"
 	"github.com/ethvanity/pkg/generator/solana"
+	"github.com/ethvanity/pkg/generator/sui"
 	"github.com/mr-tron/base58"
 )
 
@@ -85,6 +86,11 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 		matcher := aptos.NewAptosMatcher(config.Prefix, config.Suffix)
 		for i := 0; i < workers; i++ {
 			go g.workerAptos(ctx, matcher, resultChan, done, &closeOnce)
+		}
+	case generator.Sui:
+		matcher := sui.NewSuiMatcher(config.Prefix, config.Suffix)
+		for i := 0; i < workers; i++ {
+			go g.workerSui(ctx, matcher, resultChan, done, &closeOnce)
 		}
 	default: // Ethereum
 		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix)
@@ -211,4 +217,42 @@ func (g *CPUGenerator) workerAptos(ctx context.Context, matcher *aptos.AptosMatc
 // privateKeyToHex converts an Ethereum private key to its hex representation.
 func privateKeyToHex(privateKey *ecdsa.PrivateKey) string {
 	return hex.EncodeToString(crypto.FromECDSA(privateKey))
+}
+
+// workerSui generates Sui addresses (Ed25519 + Blake2b-256)
+func (g *CPUGenerator) workerSui(ctx context.Context, matcher *sui.SuiMatcher, resultChan chan<- generator.Result, done chan struct{}, closeOnce *sync.Once) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		default:
+			pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				continue
+			}
+
+			atomic.AddUint64(&g.attempts, 1)
+
+			// Sui address = Blake2b-256(0x00 || pubkey)
+			address := sui.DeriveAddress(pubKey)
+
+			if matcher.Matches(address) {
+				// Return the seed (first 32 bytes of privKey) as hex
+				result := generator.Result{
+					Network:    generator.Sui,
+					Address:    address,
+					PrivateKey: hex.EncodeToString(privKey.Seed()),
+				}
+
+				select {
+				case resultChan <- result:
+					closeOnce.Do(func() { close(done) })
+				default:
+				}
+				return
+			}
+		}
+	}
 }
