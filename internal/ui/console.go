@@ -57,7 +57,7 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
 		}
 	} else {
-		// Ethereum format (0x prefix)
+		// Ethereum/Aptos format (0x prefix)
 		if config.Prefix != "" {
 			fmt.Printf(" %s%s0x%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
 		}
@@ -118,9 +118,12 @@ func PrintSuccess(result generator.Result, elapsed time.Duration, attempts uint6
 	fmt.Printf("    %s%s╚══════════════════════════════════════════════════════════╝%s\n\n", ColorGreen, ColorBold, ColorReset)
 
 	networkLabel := "📍 ADDRESS"
-	if result.Network == generator.Solana {
+	switch result.Network {
+	case generator.Solana:
 		networkLabel = "◎ SOLANA ADDRESS"
-	} else {
+	case generator.Aptos:
+		networkLabel = "◆ APTOS ADDRESS"
+	default:
 		networkLabel = "⟠ ETHEREUM ADDRESS"
 	}
 

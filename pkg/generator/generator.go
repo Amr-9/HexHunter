@@ -13,6 +13,7 @@ type Network int
 const (
 	Ethereum Network = iota // Ethereum (secp256k1, Keccak-256, Hex)
 	Solana                  // Solana (Ed25519, Base58)
+	Aptos                   // Aptos (Ed25519, SHA3-256, Hex)
 )
 
 // String returns the network name.
@@ -22,6 +23,8 @@ func (n Network) String() string {
 		return "Ethereum"
 	case Solana:
 		return "Solana"
+	case Aptos:
+		return "Aptos"
 	default:
 		return "Unknown"
 	}

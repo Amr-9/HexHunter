@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethvanity/pkg/generator"
+	"github.com/ethvanity/pkg/generator/aptos"
 	"github.com/ethvanity/pkg/generator/ethereum"
 	"github.com/ethvanity/pkg/generator/solana"
 	"github.com/mr-tron/base58"
@@ -74,12 +75,18 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 	}
 
 	// Route to appropriate worker based on network
-	if config.Network == generator.Solana {
+	switch config.Network {
+	case generator.Solana:
 		matcher := solana.NewSolanaMatcher(config.Prefix, config.Suffix)
 		for i := 0; i < workers; i++ {
 			go g.workerSolana(ctx, matcher, resultChan, done, &closeOnce)
 		}
-	} else {
+	case generator.Aptos:
+		matcher := aptos.NewAptosMatcher(config.Prefix, config.Suffix)
+		for i := 0; i < workers; i++ {
+			go g.workerAptos(ctx, matcher, resultChan, done, &closeOnce)
+		}
+	default: // Ethereum
 		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix)
 		for i := 0; i < workers; i++ {
 			go g.workerEthereum(ctx, matcher, resultChan, done, &closeOnce)
@@ -150,6 +157,44 @@ func (g *CPUGenerator) workerSolana(ctx context.Context, matcher *solana.SolanaM
 					Network:    generator.Solana,
 					Address:    address,
 					PrivateKey: base58.Encode(privKey),
+				}
+
+				select {
+				case resultChan <- result:
+					closeOnce.Do(func() { close(done) })
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+// workerAptos generates Aptos addresses (Ed25519 + SHA3-256)
+func (g *CPUGenerator) workerAptos(ctx context.Context, matcher *aptos.AptosMatcher, resultChan chan<- generator.Result, done chan struct{}, closeOnce *sync.Once) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		default:
+			pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+			if err != nil {
+				continue
+			}
+
+			atomic.AddUint64(&g.attempts, 1)
+
+			// Aptos address = SHA3-256(pubkey || 0x00)
+			address := aptos.DeriveAddress(pubKey)
+
+			if matcher.Matches(address) {
+				// Return the seed (first 32 bytes of privKey) as hex
+				result := generator.Result{
+					Network:    generator.Aptos,
+					Address:    address,
+					PrivateKey: hex.EncodeToString(privKey.Seed()),
 				}
 
 				select {

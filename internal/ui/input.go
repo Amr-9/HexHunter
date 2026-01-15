@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ethvanity/pkg/generator"
+	"github.com/ethvanity/pkg/generator/aptos"
 	"github.com/ethvanity/pkg/generator/cpu"
 	"github.com/ethvanity/pkg/generator/ethereum"
 	"github.com/ethvanity/pkg/generator/solana"
@@ -61,24 +62,25 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 	} else {
 		fmt.Printf("\n")
 	}
+	fmt.Printf("    %s[3]%s ◆ Aptos (APT) %s- 0x prefix, Hex%s", ColorCyan, ColorReset, ColorDim, ColorReset)
+	if useGPU {
+		fmt.Printf(" ⚡\n")
+	} else {
+		fmt.Printf("\n")
+	}
 
 	fmt.Printf("\n    %s→%s ", ColorGreen, ColorReset)
 	networkChoice, _ := reader.ReadString('\n')
 	networkChoice = strings.TrimSpace(networkChoice)
 
-	useSolana := networkChoice == "2"
-	if useSolana {
-		fmt.Printf("    %s✓ Solana Selected%s\n\n", ColorGreen, ColorReset)
-	} else {
-		fmt.Printf("    %s✓ Ethereum Selected%s\n\n", ColorGreen, ColorReset)
-	}
-
 	// Step 3: Create the appropriate generator
 	var gen generator.Generator
 	var network generator.Network
 
-	if useSolana {
+	switch networkChoice {
+	case "2": // Solana
 		network = generator.Solana
+		fmt.Printf("    %s✓ Solana Selected%s\n\n", ColorGreen, ColorReset)
 		if useGPU {
 			solGPU, err := solana.NewSolanaGPUGenerator()
 			if err != nil {
@@ -91,8 +93,24 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 		} else {
 			gen = cpu.NewCPUGenerator(0)
 		}
-	} else {
+	case "3": // Aptos
+		network = generator.Aptos
+		fmt.Printf("    %s✓ Aptos Selected%s\n\n", ColorGreen, ColorReset)
+		if useGPU {
+			aptosGPU, err := aptos.NewAptosGPUGenerator()
+			if err != nil {
+				fmt.Printf("    %s⚠ Aptos GPU failed: %v%s\n", ColorRed, err, ColorReset)
+				fmt.Printf("    %s↪ Using CPU...%s\n", ColorYellow, ColorReset)
+				gen = cpu.NewCPUGenerator(0)
+			} else {
+				gen = aptosGPU
+			}
+		} else {
+			gen = cpu.NewCPUGenerator(0)
+		}
+	default: // Ethereum
 		network = generator.Ethereum
+		fmt.Printf("    %s✓ Ethereum Selected%s\n\n", ColorGreen, ColorReset)
 		if useGPU {
 			ethGPU, err := ethereum.NewGPUGenerator()
 			if err != nil {
@@ -116,10 +134,14 @@ func GetInputFromUser(network generator.Network) (string, string) {
 
 	fmt.Printf("    %s🎯 TARGET PATTERN%s\n", ColorPurple+ColorBold, ColorReset)
 
-	if network == generator.Solana {
+	switch network {
+	case generator.Solana:
 		return getSolanaInput(reader)
+	case generator.Aptos:
+		return getAptosInput(reader)
+	default:
+		return getEthereumInput(reader)
 	}
-	return getEthereumInput(reader)
 }
 
 func getEthereumInput(reader *bufio.Reader) (string, string) {
@@ -166,6 +188,30 @@ func getSolanaInput(reader *bufio.Reader) (string, string) {
 		invalidChars := solana.InvalidBase58Chars(suffix)
 		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
 		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+		suffix = ""
+	}
+
+	return prefix, suffix
+}
+
+func getAptosInput(reader *bufio.Reader) (string, string) {
+	fmt.Printf("    %sPrefix%s (0x...): ", ColorCyan, ColorReset)
+	prefixInput, _ := reader.ReadString('\n')
+	prefix := strings.TrimSpace(prefixInput)
+	prefix = strings.TrimPrefix(strings.ToLower(prefix), "0x")
+
+	if prefix != "" && !isValidHex(prefix) {
+		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
+		prefix = ""
+	}
+
+	fmt.Printf("    %sSuffix%s (...xxx): ", ColorCyan, ColorReset)
+	suffixInput, _ := reader.ReadString('\n')
+	suffix := strings.TrimSpace(suffixInput)
+	suffix = strings.ToLower(suffix)
+
+	if suffix != "" && !isValidHex(suffix) {
+		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
 		suffix = ""
 	}
 
