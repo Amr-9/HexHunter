@@ -1,9 +1,14 @@
-name: Release
+name: Build & Release
 
 on:
   push:
+    branches:
+      - '**'  # Build on every push to any branch
     tags:
-      - 'v*'
+      - 'v*'  # Also trigger on version tags for release
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -17,10 +22,16 @@ jobs:
         include:
           - os: windows-latest
             asset_name: HexHunter-windows-amd64.exe
+            goos: windows
+            goarch: amd64
           - os: ubuntu-latest
             asset_name: HexHunter-linux-amd64
+            goos: linux
+            goarch: amd64
           - os: macos-latest
             asset_name: HexHunter-macos-arm64
+            goos: darwin
+            goarch: arm64
 
     steps:
       - name: Checkout code
@@ -41,24 +52,57 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ocl-icd-opencl-dev
 
-      # Build Command
-      - name: Build
+      # Windows-specific: Compile resources (manifest, version info)
+      - name: Compile Windows Resources
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} .
+          Push-Location cmd/hexhunter
+          windres -o resource.syso resource.rc
+          Pop-Location
 
-      # Upload Build Artifacts
+      # Build Command - Platform specific
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
+
+      # Upload Build Artifacts (always, for debugging)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.os }}
           path: ${{ matrix.asset_name }}
-          retention-days: 1
+          retention-days: 3
 
+  # Release job - only runs on version tags
   release:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/v')  # Only on v* tags
     
     steps:
       - name: Download Artifacts

@@ -25,6 +25,27 @@ $env:GOARCH = "amd64"
 $env:CGO_ENABLED = "1"
 $env:CC = "gcc"
 
+# Compile Windows resources (manifest, icon, version info)
+Write-Host "Compiling Windows resources..." -ForegroundColor Yellow
+$resourceDir = "cmd\hexhunter"
+$sysoFile = "$resourceDir\resource.syso"
+
+# Check if windres is available
+$windresPath = Get-Command windres -ErrorAction SilentlyContinue
+if ($windresPath) {
+    Push-Location $resourceDir
+    windres -o resource.syso resource.rc 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Resources compiled successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "Resource compilation failed, building without manifest..." -ForegroundColor Yellow
+    }
+    Pop-Location
+} else {
+    Write-Host "windres not found, building without manifest embedding..." -ForegroundColor Yellow
+    Write-Host "To embed manifest, install MinGW-w64 and add to PATH" -ForegroundColor Gray
+}
+
 # Build the application
 Write-Host "Building application (HexHunter.exe)..." -ForegroundColor Yellow
 
