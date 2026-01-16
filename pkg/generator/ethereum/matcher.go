@@ -5,18 +5,20 @@ import (
 	"strings"
 )
 
-// Matcher provides optimized prefix/suffix matching for Ethereum addresses.
+// Matcher provides optimized prefix/suffix/contains matching for Ethereum addresses.
 // It pre-processes the search patterns to avoid string allocations in the hot loop.
 type Matcher struct {
-	prefixBytes []byte // Pre-converted prefix as lowercase hex bytes
-	suffixBytes []byte // Pre-converted suffix as lowercase hex bytes
-	hasPrefix   bool
-	hasSuffix   bool
+	prefixBytes   []byte // Pre-converted prefix as lowercase hex bytes
+	suffixBytes   []byte // Pre-converted suffix as lowercase hex bytes
+	containsBytes []byte // Pre-converted contains as lowercase hex bytes
+	hasPrefix     bool
+	hasSuffix     bool
+	hasContains   bool
 }
 
-// NewMatcher creates a new Matcher with the given prefix and suffix.
-// Both are converted to lowercase bytes once, avoiding per-iteration allocations.
-func NewMatcher(prefix, suffix string) *Matcher {
+// NewMatcher creates a new Matcher with the given prefix, suffix, and contains.
+// All are converted to lowercase bytes once, avoiding per-iteration allocations.
+func NewMatcher(prefix, suffix, contains string) *Matcher {
 	m := &Matcher{}
 
 	// Pre-process prefix (remove 0x if present, convert to lowercase hex bytes)
@@ -33,14 +35,21 @@ func NewMatcher(prefix, suffix string) *Matcher {
 		m.hasSuffix = true
 	}
 
+	// Pre-process contains (convert to lowercase hex bytes)
+	contains = strings.TrimPrefix(strings.ToLower(contains), "0x")
+	if contains != "" {
+		m.containsBytes = []byte(contains)
+		m.hasContains = true
+	}
+
 	return m
 }
 
-// Matches checks if the given address bytes match the prefix and/or suffix.
+// Matches checks if the given address bytes match the prefix, suffix, and contains.
 // The address should be the raw 20-byte Ethereum address (not hex encoded).
 // This method is optimized to avoid any memory allocations.
 func (m *Matcher) Matches(addressBytes []byte) bool {
-	if !m.hasPrefix && !m.hasSuffix {
+	if !m.hasPrefix && !m.hasSuffix && !m.hasContains {
 		return true // No criteria specified
 	}
 
@@ -71,6 +80,37 @@ func (m *Matcher) Matches(addressBytes []byte) bool {
 			if hexBuf[start+i] != b {
 				return false
 			}
+		}
+	}
+
+	// Check contains in the middle section
+	if m.hasContains {
+		// Calculate middle section (between prefix and suffix)
+		startIdx := len(m.prefixBytes)
+		endIdx := 40 - len(m.suffixBytes)
+
+		if startIdx >= endIdx || endIdx-startIdx < len(m.containsBytes) {
+			return false
+		}
+
+		// Search for containsBytes in the middle section
+		middleSection := hexBuf[startIdx:endIdx]
+		found := false
+		for i := 0; i <= len(middleSection)-len(m.containsBytes); i++ {
+			match := true
+			for j, b := range m.containsBytes {
+				if middleSection[i+j] != b {
+					match = false
+					break
+				}
+			}
+			if match {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
 		}
 	}
 

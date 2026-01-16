@@ -13,23 +13,26 @@ import (
 type BitcoinMatcher struct {
 	prefix      string
 	suffix      string
+	contains    string
 	addressType generator.AddressType
 	isBech32    bool
 }
 
 // NewBitcoinMatcher creates a new Bitcoin address matcher.
-func NewBitcoinMatcher(prefix, suffix string, addrType generator.AddressType) *BitcoinMatcher {
+func NewBitcoinMatcher(prefix, suffix, contains string, addrType generator.AddressType) *BitcoinMatcher {
 	isBech32 := IsBech32Type(addrType)
 
 	// For Bech32 addresses, normalize to lowercase
 	if isBech32 {
 		prefix = strings.ToLower(prefix)
 		suffix = strings.ToLower(suffix)
+		contains = strings.ToLower(contains)
 	}
 
 	return &BitcoinMatcher{
 		prefix:      prefix,
 		suffix:      suffix,
+		contains:    contains,
 		addressType: addrType,
 		isBech32:    isBech32,
 	}
@@ -81,6 +84,26 @@ func (m *BitcoinMatcher) MatchesAfterPrefix(address string) bool {
 	// Check user's custom suffix
 	if m.suffix != "" && !strings.HasSuffix(address, m.suffix) {
 		return false
+	}
+
+	// Check contains pattern in the middle section
+	if m.contains != "" {
+		// Calculate the middle section (between prefix and suffix)
+		startIdx := len(m.prefix)
+		endIdx := len(addressWithoutPrefix)
+		if m.suffix != "" {
+			endIdx = len(addressWithoutPrefix) - len(m.suffix)
+		}
+
+		// Ensure valid range
+		if startIdx >= endIdx {
+			return false
+		}
+
+		middleSection := addressWithoutPrefix[startIdx:endIdx]
+		if !strings.Contains(middleSection, m.contains) {
+			return false
+		}
 	}
 
 	return true

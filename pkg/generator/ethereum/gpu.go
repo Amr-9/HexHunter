@@ -65,6 +65,7 @@ type GPUGenerator struct {
 	bufFoundGid  C.cl_mem // Found GID
 	bufTargetPfx C.cl_mem // Target prefix pattern
 	bufTargetSfx C.cl_mem // Target suffix pattern
+	bufTargetCnt C.cl_mem // Target contains pattern
 
 	// secp256k1 curve for CPU calculations
 	curve *secp256k1.BitCurve
@@ -74,10 +75,12 @@ type GPUGenerator struct {
 	startTime time.Time
 
 	// matching
-	prefixBytes []byte
-	suffixBytes []byte
-	prefixIsOdd bool // true if original prefix hex length was odd
-	suffixIsOdd bool // true if original suffix hex length was odd
+	prefixBytes   []byte
+	suffixBytes   []byte
+	containsBytes []byte
+	prefixIsOdd   bool // true if original prefix hex length was odd
+	suffixIsOdd   bool // true if original suffix hex length was odd
+	containsIsOdd bool // true if original contains hex length was odd
 }
 
 // GPUInfo contains information about an available GPU device
@@ -127,7 +130,10 @@ func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 	g.prefixBytes = nil
 	g.suffixBytes = nil
 	g.prefixIsOdd = false
+	g.prefixIsOdd = false
 	g.suffixIsOdd = false
+	g.containsIsOdd = false
+	g.containsBytes = nil
 
 	if config.Prefix != "" {
 		g.prefixIsOdd = len(config.Prefix)%2 == 1 // Track before padding!
@@ -141,6 +147,10 @@ func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 			paddedSuffix = "0" + config.Suffix // Pad at start for low nibble
 		}
 		g.suffixBytes, _ = hex.DecodeString(paddedSuffix)
+	}
+	if config.Contains != "" {
+		g.containsIsOdd = len(config.Contains)%2 == 1
+		g.containsBytes, _ = hex.DecodeString(padHex(config.Contains))
 	}
 
 	go g.runGPU(ctx, resultChan, config)
@@ -402,9 +412,21 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufTargetSfx failed: %d", ret)
 	}
 
-	// Set Kernel Args (12 total)
+	// 8. Target Contains (20 bytes max, using __constant memory)
+	containsData := make([]byte, 20)
+	if len(g.containsBytes) > 0 {
+		copy(containsData, g.containsBytes)
+	}
+	g.bufTargetCnt = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
+		20, unsafe.Pointer(&containsData[0]), &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufTargetCnt failed: %d", ret)
+	}
+
+	// Set Kernel Args (14 total)
 	prefixLen := C.uint(len(g.prefixBytes))
 	suffixLen := C.uint(len(g.suffixBytes))
+	containsLen := C.uint(len(g.containsBytes))
 
 	// Convert bool to uint for kernel
 	prefixOdd := C.uint(0)
@@ -414,6 +436,10 @@ func (g *GPUGenerator) createBuffers() error {
 	suffixOdd := C.uint(0)
 	if g.suffixIsOdd {
 		suffixOdd = 1
+	}
+	containsOdd := C.uint(0)
+	if g.containsIsOdd {
+		containsOdd = 1
 	}
 
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufBasePoint)), unsafe.Pointer(&g.bufBasePoint))
@@ -427,6 +453,9 @@ func (g *GPUGenerator) createBuffers() error {
 	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
 	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(prefixOdd)), unsafe.Pointer(&prefixOdd))
 	C.clSetKernelArg(g.kernel, 10, C.size_t(unsafe.Sizeof(suffixOdd)), unsafe.Pointer(&suffixOdd))
+	C.clSetKernelArg(g.kernel, 11, C.size_t(unsafe.Sizeof(g.bufTargetCnt)), unsafe.Pointer(&g.bufTargetCnt))
+	C.clSetKernelArg(g.kernel, 12, C.size_t(unsafe.Sizeof(containsLen)), unsafe.Pointer(&containsLen))
+	C.clSetKernelArg(g.kernel, 13, C.size_t(unsafe.Sizeof(containsOdd)), unsafe.Pointer(&containsOdd))
 
 	return nil
 }
@@ -467,6 +496,9 @@ func (g *GPUGenerator) releaseBuffers() {
 	}
 	if g.bufTargetSfx != nil {
 		C.clReleaseMemObject(g.bufTargetSfx)
+	}
+	if g.bufTargetCnt != nil {
+		C.clReleaseMemObject(g.bufTargetCnt)
 	}
 }
 

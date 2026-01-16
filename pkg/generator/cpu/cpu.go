@@ -100,7 +100,7 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 		if addrType == generator.AddressTypeDefault {
 			addrType = generator.AddressTypeTaproot
 		}
-		matcher := bitcoin.NewBitcoinMatcher(config.Prefix, config.Suffix, addrType)
+		matcher := bitcoin.NewBitcoinMatcher(config.Prefix, config.Suffix, config.Contains, addrType)
 		for i := 0; i < workers; i++ {
 			go g.workerBitcoin(ctx, matcher, addrType, resultChan, done, &closeOnce)
 		}
@@ -110,7 +110,7 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 			go g.workerTron(ctx, matcher, resultChan, done, &closeOnce)
 		}
 	default: // Ethereum
-		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix)
+		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix, config.Contains)
 		for i := 0; i < workers; i++ {
 			go g.workerEthereum(ctx, matcher, resultChan, done, &closeOnce)
 		}

@@ -182,7 +182,10 @@ __kernel void compute_address(
     __constant uchar *target_suffix,     // Suffix pattern (up to 20 bytes)  
     uint suffix_len,                     // Suffix length in bytes (rounded up)
     uint prefix_is_odd,                  // 1 if prefix hex length was odd
-    uint suffix_is_odd                   // 1 if suffix hex length was odd
+    uint suffix_is_odd,                  // 1 if suffix hex length was odd
+    __constant uchar *target_contains,   // Contains pattern (up to 20 bytes)
+    uint contains_len,                   // Contains length in bytes
+    uint contains_is_odd                 // 1 if contains hex length was odd
 ) {
     uint gid = get_global_id(0);
     uint lid = get_local_id(0);
@@ -395,6 +398,51 @@ __kernel void compute_address(
             }
         } else {
             if (addr_byte != target_byte) {
+                match = false;
+            }
+        }
+    }
+    
+    // Check contains - search for pattern anywhere in the middle section
+    // Middle section is between prefix and suffix
+    if (match && contains_len > 0) {
+        // Calculate search range
+        uint start_pos = prefix_len;  // Start after prefix
+        uint end_pos = 20 - suffix_len;  // End before suffix
+        
+        if (end_pos <= start_pos || contains_len > end_pos - start_pos) {
+            match = false;
+        } else {
+            bool contains_found = false;
+            // Slide window through middle section
+            for (uint pos = start_pos; pos <= end_pos - contains_len && !contains_found; pos++) {
+                bool pos_match = true;
+                for (uint i = 0; i < contains_len && pos_match; i++) {
+                    uchar addr_byte = h[12 + pos + i];
+                    uchar target_byte = target_contains[i];
+                    
+                    // Handle odd nibble at start/end
+                    if (i == 0 && contains_is_odd && contains_len == 1) {
+                        // Single byte odd: compare low nibble
+                        if ((addr_byte & 0x0F) != (target_byte & 0x0F)) {
+                            pos_match = false;
+                        }
+                    } else if (i == contains_len - 1 && contains_is_odd) {
+                        // Last byte of odd contains: compare high nibble
+                        if ((addr_byte & 0xF0) != (target_byte & 0xF0)) {
+                            pos_match = false;
+                        }
+                    } else {
+                        if (addr_byte != target_byte) {
+                            pos_match = false;
+                        }
+                    }
+                }
+                if (pos_match) {
+                    contains_found = true;
+                }
+            }
+            if (!contains_found) {
                 match = false;
             }
         }

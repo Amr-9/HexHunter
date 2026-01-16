@@ -36,12 +36,12 @@ func main() {
 
 	// Main application loop
 	for {
-		// Interactive prompts for prefix/suffix
-		prefix, suffix := ui.GetInputFromUser(currentNetwork)
+		// Interactive prompts for prefix/suffix/contains
+		prefix, suffix, contains := ui.GetInputFromUser(currentNetwork)
 
 		// Validate at least one is provided
-		if prefix == "" && suffix == "" {
-			fmt.Printf("\n    %s✗ Must specify prefix or suffix!%s\n", ui.ColorRed, ui.ColorReset)
+		if prefix == "" && suffix == "" && contains == "" {
+			fmt.Printf("\n    %s✗ Must specify prefix, suffix, or contains!%s\n", ui.ColorRed, ui.ColorReset)
 			continue
 		}
 
@@ -51,6 +51,7 @@ func main() {
 			AddressType: ui.SelectedBitcoinAddressType, // Used by Bitcoin
 			Prefix:      prefix,
 			Suffix:      suffix,
+			Contains:    contains,
 			Workers:     runtime.NumCPU(),
 		}
 
@@ -62,7 +63,7 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 		// Print search info
-		difficulty := estimateDifficulty(config.Prefix, config.Suffix, currentNetwork)
+		difficulty := estimateDifficulty(config.Prefix, config.Suffix, config.Contains, currentNetwork)
 		ui.PrintSearchInfo(config, difficulty)
 
 		// Start the generator
@@ -162,9 +163,11 @@ Generated: %s
 }
 
 // estimateDifficulty calculates expected attempts based on network
-func estimateDifficulty(prefix, suffix string, network generator.Network) uint64 {
+func estimateDifficulty(prefix, suffix, contains string, network generator.Network) uint64 {
 	totalChars := len(prefix) + len(suffix)
-	if totalChars == 0 {
+	containsLen := len(contains)
+
+	if totalChars == 0 && containsLen == 0 {
 		return 1
 	}
 
@@ -190,8 +193,25 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 		}
 	}
 
+	// Calculate difficulty for prefix + suffix
 	for i := 0; i < totalChars; i++ {
 		difficulty *= base
 	}
+
+	// Add contains difficulty (approximate)
+	// Contains can appear anywhere in ~20 positions, so divide by that
+	if containsLen > 0 {
+		containsDiff := uint64(1)
+		for i := 0; i < containsLen; i++ {
+			containsDiff *= base
+		}
+		// Divide by ~20 possible positions (rough average)
+		containsDiff = containsDiff / 20
+		if containsDiff < 1 {
+			containsDiff = 1
+		}
+		difficulty *= containsDiff
+	}
+
 	return difficulty
 }

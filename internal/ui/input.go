@@ -199,27 +199,31 @@ func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Gener
 	return gen, network
 }
 
-// GetInputFromUser prompts user for prefix and suffix
-func GetInputFromUser(network generator.Network) (string, string) {
+// GetInputFromUser prompts user for prefix, suffix, and contains
+// Returns (prefix, suffix, contains) - contains is only supported for Bitcoin currently
+func GetInputFromUser(network generator.Network) (string, string, string) {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Printf("    %s🎯 TARGET PATTERN%s\n", ColorPurple+ColorBold, ColorReset)
 
 	switch network {
 	case generator.Solana:
-		return getSolanaInput(reader)
+		p, s := getSolanaInput(reader)
+		return p, s, ""
 	case generator.Aptos, generator.Sui:
-		return getAptosInput(reader)
+		p, s := getAptosInput(reader)
+		return p, s, ""
 	case generator.Bitcoin:
 		return getBitcoinInput(reader, SelectedBitcoinAddressType)
 	case generator.Tron:
-		return getTronInput(reader)
+		p, s := getTronInput(reader)
+		return p, s, ""
 	default:
 		return getEthereumInput(reader)
 	}
 }
 
-func getEthereumInput(reader *bufio.Reader) (string, string) {
+func getEthereumInput(reader *bufio.Reader) (string, string, string) {
 	fmt.Printf("    %sPrefix%s (0x...): ", ColorCyan, ColorReset)
 	prefixInput, _ := reader.ReadString('\n')
 	prefix := strings.TrimSpace(prefixInput)
@@ -228,6 +232,16 @@ func getEthereumInput(reader *bufio.Reader) (string, string) {
 	if prefix != "" && !isValidHex(prefix) {
 		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
 		prefix = ""
+	}
+
+	fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+	containsInput, _ := reader.ReadString('\n')
+	contains := strings.TrimSpace(containsInput)
+	contains = strings.TrimPrefix(strings.ToLower(contains), "0x")
+
+	if contains != "" && !isValidHex(contains) {
+		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
+		contains = ""
 	}
 
 	fmt.Printf("    %sSuffix%s (...xxx): ", ColorCyan, ColorReset)
@@ -240,7 +254,7 @@ func getEthereumInput(reader *bufio.Reader) (string, string) {
 		suffix = ""
 	}
 
-	return prefix, suffix
+	return prefix, suffix, contains
 }
 
 func getSolanaInput(reader *bufio.Reader) (string, string) {
@@ -358,7 +372,8 @@ func selectBitcoinAddressType(reader *bufio.Reader) generator.AddressType {
 // getBitcoinInput handles pattern input for Bitcoin addresses.
 // For Taproot: lowercase only (Bech32m)
 // For Legacy/SegWit: case-sensitive (Base58)
-func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (string, string) {
+// Returns (prefix, suffix, contains)
+func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (string, string, string) {
 	isBech32 := bitcoin.IsBech32Type(addrType)
 	prefix := bitcoin.AddressPrefix(addrType)
 
@@ -375,6 +390,17 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 			userPrefix = ""
 		}
 
+		fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+		containsInput, _ := reader.ReadString('\n')
+		userContains := strings.TrimSpace(strings.ToLower(containsInput))
+
+		if userContains != "" && !bitcoin.IsValidPattern(userContains, addrType) {
+			invalidChars := bitcoin.InvalidChars(userContains, addrType)
+			fmt.Printf("    %s⚠ Invalid Bech32 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 1, b, i, o)%s\n", ColorDim, ColorReset)
+			userContains = ""
+		}
+
 		fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
 		suffixInput, _ := reader.ReadString('\n')
 		userSuffix := strings.TrimSpace(strings.ToLower(suffixInput))
@@ -386,7 +412,7 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 			userSuffix = ""
 		}
 
-		return userPrefix, userSuffix
+		return userPrefix, userSuffix, userContains
 	} else {
 		// Legacy/SegWit - Base58 (case-sensitive)
 		fmt.Printf("    %sPrefix%s (after %s): ", ColorCyan, ColorReset, prefix)
@@ -401,6 +427,18 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 			userPrefix = ""
 		}
 
+		fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+		fmt.Printf("%s(Case-sensitive!)%s ", ColorYellow, ColorReset)
+		containsInput, _ := reader.ReadString('\n')
+		userContains := strings.TrimSpace(containsInput)
+
+		if userContains != "" && !bitcoin.IsValidPattern(userContains, addrType) {
+			invalidChars := bitcoin.InvalidChars(userContains, addrType)
+			fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+			userContains = ""
+		}
+
 		fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
 		suffixInput, _ := reader.ReadString('\n')
 		userSuffix := strings.TrimSpace(suffixInput)
@@ -412,7 +450,7 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 			userSuffix = ""
 		}
 
-		return userPrefix, userSuffix
+		return userPrefix, userSuffix, userContains
 	}
 }
 

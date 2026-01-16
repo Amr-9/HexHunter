@@ -69,6 +69,7 @@ type Config struct {
 	AddressType AddressType // Address type (for Bitcoin: P2TR, P2PKH, P2SH)
 	Prefix      string      // Desired address prefix
 	Suffix      string      // Desired address suffix
+	Contains    string      // Pattern to find anywhere in the address (not overlapping prefix/suffix)
 	Workers     int         // Number of concurrent workers
 }
 

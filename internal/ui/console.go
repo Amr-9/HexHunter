@@ -66,13 +66,18 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 		case generator.AddressTypeNestedSegWit:
 			prefix = "3"
 		}
-		if config.Prefix != "" {
-			fmt.Printf(" %s%s%s%s%s...%s", ColorBold, ColorCyan, prefix, config.Prefix, ColorDim, ColorReset)
-		} else {
-			fmt.Printf(" %s%s%s%s...%s", ColorBold, ColorCyan, prefix, ColorDim, ColorReset)
+		// Build pattern: prefix + userPrefix + ...contains... + suffix
+		fmt.Printf(" %s%s%s%s%s", ColorBold, ColorCyan, prefix, config.Prefix, ColorReset)
+		if config.Contains != "" {
+			fmt.Printf("%s...%s%s%s", ColorDim, ColorCyan+ColorBold, config.Contains, ColorReset)
+			if config.Suffix == "" {
+				fmt.Printf("%s...%s", ColorDim, ColorReset)
+			}
 		}
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
+		} else if config.Contains == "" && config.Prefix != "" {
+			fmt.Printf("%s...%s", ColorDim, ColorReset)
 		}
 	case generator.Tron:
 		// Tron format (T prefix)
@@ -86,8 +91,14 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 		}
 	default:
 		// Ethereum/Aptos/Sui format (0x prefix)
-		if config.Prefix != "" {
-			fmt.Printf(" %s%s0x%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
+		fmt.Printf(" %s%s0x%s%s", ColorBold, ColorCyan, config.Prefix, ColorReset)
+		if config.Contains != "" {
+			fmt.Printf("%s...%s%s%s", ColorDim, ColorCyan+ColorBold, config.Contains, ColorReset)
+			if config.Suffix == "" {
+				fmt.Printf("%s...%s", ColorDim, ColorReset)
+			}
+		} else if config.Prefix != "" {
+			fmt.Printf("%s...%s", ColorDim, ColorReset)
 		}
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)

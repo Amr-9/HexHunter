@@ -11,11 +11,14 @@
 
 <img src="https://img.shields.io/badge/Speed-40M+%20addresses/sec-brightgreen?style=for-the-badge" alt="Speed">
 
+[![Download Now](https://img.shields.io/badge/⬇_Download_Now-brightgreen?style=for-the-badge&logoColor=white)](https://github.com/Amr-9/HexHunter/releases)
+
 #### Supported Networks
 [![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white)]()
 [![BNB Chain](https://img.shields.io/badge/BNB_Chain-F0B90B?style=for-the-badge&logo=binance&logoColor=black)]()
 [![Arbitrum](https://img.shields.io/badge/Arbitrum-28A0F0?style=for-the-badge&logo=arbitrum&logoColor=white)]()
 [![Base](https://img.shields.io/badge/Base-0052FF?style=for-the-badge&logo=coinbase&logoColor=white)]()
+[![Tron](https://img.shields.io/badge/TRON-FF0013?style=for-the-badge&logo=tron&logoColor=white)]()
 [![Solana](https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white)]()
 [![Aptos](https://img.shields.io/badge/Aptos-000000?style=for-the-badge&logo=aptos&logoColor=white)]()
 [![Sui](https://img.shields.io/badge/Sui-6FBCF0?style=for-the-badge&logo=sui&logoColor=white)]()
@@ -42,6 +45,8 @@ A **vanity address** is a custom blockchain address that contains a specific pat
 |---------|---------------|----------------|--------------|
 | **Ethereum/EVM** | `0x7a3f8b2c...` | `0xdeadbeef...` | Hex words |
 | **Ethereum/EVM** | `0x9c4e2d1a...` | `0x00000000...` | Leading zeros |
+| **Tron** | `TJRyWwFs9...` | `TRoN...` | Base58 words |
+| **Tron** | `TLa2f6VP...` | `TTTT...` | Repeating chars |
 | **Solana** | `7xKXtg2CW...` | `So1anaWa11et...` | Base58 words |
 | **Bitcoin (Taproot)** | `bc1p5cyxnuxm...` | `bc1pcafe...` | Bech32m |
 | **Bitcoin (Legacy)** | `1BvBMSEYstW...` | `1Love...` | Base58 |
@@ -74,10 +79,11 @@ A **vanity address** is a custom blockchain address that contains a specific pat
 | Network | Address Format | GPU Accelerated | Notes |
 |---------|---------------|-----------------|-------|
 | ![ETH](https://img.shields.io/badge/-ETH-3C3C3D?logo=ethereum&logoColor=white) **Ethereum (EVM)** | `0x...` (hex) | ⚡ **Yes** | Supports all EVM chains (BSC, Polygon, Arbitrum, etc.) |
+| ![TRX](https://img.shields.io/badge/-TRX-FF0013?logo=tron&logoColor=white) **Tron** | `T...` (Base58) | ⚡ **Yes** | Same curve as Ethereum (secp256k1) |
 | ![SOL](https://img.shields.io/badge/-SOL-9945FF?logo=solana&logoColor=white) **Solana** | Base58 | ⚡ **Yes** | Ed25519 curve |
 | ![APT](https://img.shields.io/badge/-APT-000000?logo=aptos&logoColor=white) **Aptos** | `0x...` (hex) | ⚡ **Yes** | Ed25519 curve |
-| ![SUI](https://img.shields.io/badge/-SUI-6FBCF0?logo=sui&logoColor=white) **Sui** | `0x...` (hex) | 💻 CPU | Ed25519 curve |
-| ![BTC](https://img.shields.io/badge/-BTC-F7931A?logo=bitcoin&logoColor=white) **Bitcoin** | P2TR/P2PKH/P2SH | 💻 CPU | Taproot, Legacy, SegWit |
+| ![SUI](https://img.shields.io/badge/-SUI-6FBCF0?logo=sui&logoColor=white) **Sui** | `0x...` (hex) | ⚡ **Yes** | Ed25519 curve |
+| ![BTC](https://img.shields.io/badge/-BTC-F7931A?logo=bitcoin&logoColor=white) **Bitcoin** | P2TR/P2PKH/P2SH | 💻 CPU only| Taproot, Legacy, SegWit |
 
 ---
 
@@ -85,10 +91,10 @@ A **vanity address** is a custom blockchain address that contains a specific pat
 
 | Feature | Description |
 |---------|-------------|
-| 🌐 **Multi-Chain Support** | Generate vanity addresses for Ethereum, Solana, Aptos, Sui, and Bitcoin! |
+| 🌐 **Multi-Chain Support** | Generate vanity addresses for Ethereum, Tron, Solana, Aptos, Sui, and Bitcoin! |
 | 🚀 **Zero Dependencies** | Just download and run - no Go, Python, or Node.js required! |
 | 🔒 **100% Offline** | Works completely offline - your keys never leave your device |
-| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec (ETH/SOL/APT) |
+| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec (ETH/TRX/SOL/APT/SUI) |
 | 💻 **CPU Fallback** | Fully functional multi-threaded CPU mode for all networks |
 | 🔐 **Cryptographically Secure** | Uses OS-level secure random (`CryptGenRandom`/`/dev/urandom`) |
 | 🔄 **Continuous Mode** | Generate multiple addresses without restarting |
@@ -270,27 +276,54 @@ HexHunter/
 │       └── input.go             # User input handling
 ├── pkg/
 │   └── generator/
-│       ├── generator.go         # Generator interface
+│       ├── generator.go         # Generator interface & types
+│       ├── common/              # Shared GPU kernel components
+│       │   ├── kernel_utils.go  # OpenCL kernel loading utilities
+│       │   └── kernels/
+│       │       └── ed25519_core.cl  # Shared Ed25519 implementation
+│       ├── cpu/                 # CPU fallback implementation
+│       │   └── cpu.go           # Multi-threaded CPU generator
 │       ├── ethereum/            # Ethereum/EVM support (GPU ⚡)
 │       │   ├── gpu.go           # OpenCL GPU implementation
 │       │   ├── matcher.go       # Pattern matching
+│       │   ├── table_gen.go     # Precomputed EC tables
 │       │   └── kernels/
-│       │       └── vanity.cl    # OpenCL kernel
+│       │       └── vanity_v4.cl # secp256k1 + Keccak kernel
+│       ├── tron/                # Tron support (GPU ⚡)
+│       │   ├── gpu.go           # Reuses secp256k1 with Base58Check
+│       │   ├── matcher.go       # Base58 pattern matching
+│       │   ├── address.go       # Tron address encoding
+│       │   └── kernels/
+│       │       └── tron_kernel.cl
 │       ├── solana/              # Solana support (GPU ⚡)
 │       │   ├── gpu.go           # Ed25519 GPU implementation
+│       │   ├── kernel_builder.go # Combines core + network kernel
 │       │   ├── matcher.go       # Base58 pattern matching
 │       │   └── kernels/
-│       │       └── solana.cl    # OpenCL kernel
+│       │       └── solana_kernel.cl
 │       ├── aptos/               # Aptos support (GPU ⚡)
-│       │   └── ...
-│       ├── sui/                 # Sui support (CPU)
-│       │   └── cpu.go
-│       └── bitcoin/             # Bitcoin support (CPU)
-│           └── cpu.go           # P2TR/P2PKH/P2SH
+│       │   ├── gpu.go           # Ed25519 + SHA3-256
+│       │   ├── kernel_builder.go
+│       │   ├── matcher.go       # Hex pattern matching
+│       │   └── kernels/
+│       │       └── aptos_kernel.cl
+│       ├── sui/                 # Sui support (GPU ⚡)
+│       │   ├── gpu.go           # Ed25519 + Blake2b-256
+│       │   ├── kernel_builder.go
+│       │   ├── matcher.go       # Hex pattern matching
+│       │   └── kernels/
+│       │       └── sui_kernel.cl
+│       └── bitcoin/             # Bitcoin support (CPU only)
+│           ├── address.go       # P2TR/P2PKH/P2SH encoding
+│           ├── address_types.go # Address type definitions
+│           ├── crypto.go        # secp256k1 operations
+│           ├── matcher.go       # Bech32/Base58 matching
+│           └── validation.go    # Address validation
 ├── deps/
 │   ├── opencl-headers/          # OpenCL header files
 │   └── lib/                     # OpenCL libraries
-├── build.ps1                    # Windows build 
+├── build.ps1                    # Windows GPU build
+└── build.sh                     # Linux/macOS build
 ```
 
 ---
