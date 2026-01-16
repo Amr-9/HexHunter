@@ -13,6 +13,7 @@ import (
 	"github.com/Amr-9/HexHunter/pkg/generator/cpu"
 	"github.com/Amr-9/HexHunter/pkg/generator/ethereum"
 	"github.com/Amr-9/HexHunter/pkg/generator/solana"
+	"github.com/Amr-9/HexHunter/pkg/generator/sui"
 	"github.com/Amr-9/HexHunter/pkg/generator/tron"
 )
 
@@ -88,7 +89,11 @@ func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Gener
 		fmt.Printf("\n")
 	}
 	fmt.Printf("    %s[4]%s ◇ Sui (SUI) %s- 0x prefix, Hex%s", ColorCyan, ColorReset, ColorDim, ColorReset)
-	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
+	if useGPU {
+		fmt.Printf(" ⚡\n")
+	} else {
+		fmt.Printf("\n")
+	}
 	fmt.Printf("    %s[5]%s ₿ Bitcoin (BTC) %s- Taproot/Legacy/SegWit%s", ColorCyan, ColorReset, ColorDim, ColorReset)
 	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
 	fmt.Printf("    %s[6]%s ₮ Tron (TRX) %s- Base58, T prefix%s", ColorCyan, ColorReset, ColorDim, ColorReset)
@@ -140,8 +145,18 @@ func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Gener
 	case "4": // Sui
 		network = generator.Sui
 		fmt.Printf("    %s✓ Sui Selected%s\n\n", ColorGreen, ColorReset)
-		// Sui is CPU-only for now
-		gen = cpu.NewCPUGenerator(0)
+		if useGPU {
+			suiGPU, err := sui.NewSuiGPUGenerator()
+			if err != nil {
+				fmt.Printf("    %s⚠ Sui GPU failed: %v%s\n", ColorRed, err, ColorReset)
+				fmt.Printf("    %s↪ Using CPU...%s\n", ColorYellow, ColorReset)
+				gen = cpu.NewCPUGenerator(0)
+			} else {
+				gen = suiGPU
+			}
+		} else {
+			gen = cpu.NewCPUGenerator(0)
+		}
 	case "5": // Bitcoin
 		network = generator.Bitcoin
 		fmt.Printf("    %s✓ Bitcoin Selected%s\n\n", ColorGreen, ColorReset)
