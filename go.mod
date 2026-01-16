@@ -1,4 +1,4 @@
-module github.com/ethvanity
+module github.com/Amr-9/HexHunter
 
 go 1.24.9
 

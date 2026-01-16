@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 // AptosGPUGenerator is a stub for non-OpenCL builds.

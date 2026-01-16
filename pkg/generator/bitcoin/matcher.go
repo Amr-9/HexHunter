@@ -3,7 +3,7 @@ package bitcoin
 import (
 	"strings"
 
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 // BitcoinMatcher handles pattern matching for Bitcoin addresses.

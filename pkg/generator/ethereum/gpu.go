@@ -34,9 +34,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/Amr-9/HexHunter/pkg/generator"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
-	"github.com/ethvanity/pkg/generator"
 )
 
 //go:embed kernels/vanity_v4.cl

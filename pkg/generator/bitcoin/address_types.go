@@ -3,7 +3,7 @@
 package bitcoin
 
 import (
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 // AddressPrefix returns the expected prefix for a Bitcoin address type.

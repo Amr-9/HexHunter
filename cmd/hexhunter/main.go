@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ethvanity/internal/ui"
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/internal/ui"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 const (

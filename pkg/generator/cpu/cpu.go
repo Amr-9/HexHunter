@@ -11,13 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Amr-9/HexHunter/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator/aptos"
+	"github.com/Amr-9/HexHunter/pkg/generator/bitcoin"
+	"github.com/Amr-9/HexHunter/pkg/generator/ethereum"
+	"github.com/Amr-9/HexHunter/pkg/generator/solana"
+	"github.com/Amr-9/HexHunter/pkg/generator/sui"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethvanity/pkg/generator"
-	"github.com/ethvanity/pkg/generator/aptos"
-	"github.com/ethvanity/pkg/generator/bitcoin"
-	"github.com/ethvanity/pkg/generator/ethereum"
-	"github.com/ethvanity/pkg/generator/solana"
-	"github.com/ethvanity/pkg/generator/sui"
 	"github.com/mr-tron/base58"
 )
 

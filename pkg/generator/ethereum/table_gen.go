@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/Amr-9/HexHunter/pkg/generator"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
-	"github.com/ethvanity/pkg/generator"
 )
 
 // GenerateTable generates the precomputed table for GPU acceleration

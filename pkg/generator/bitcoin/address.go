@@ -8,7 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"golang.org/x/crypto/ripemd160"
 
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 // DeriveAddress derives a Bitcoin address from a public key based on the address type.

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 )
 
 // GPUGenerator is a stub for non-OpenCL builds.

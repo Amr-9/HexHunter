@@ -31,7 +31,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/ethvanity/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator"
 	"github.com/mr-tron/base58"
 )
 
