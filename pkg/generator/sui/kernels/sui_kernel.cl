@@ -138,8 +138,10 @@ __kernel void generate_sui_address(
     global uchar *group_offset,
     constant uchar *prefix,
     constant uchar *suffix,
+    constant uchar *contains,
     const uint prefix_len,
     const uint suffix_len,
+    const uint contains_len,
     const uint case_sensitive
 ) {
     uchar public_key[32] __attribute__((aligned(4)));
@@ -177,6 +179,7 @@ __kernel void generate_sui_address(
     // Pattern matching
     unsigned int match = 1;
 
+    // Check prefix
     for (uint i = 0; i < prefix_len && match; i++) {
         uchar addr_char = address_hex[i];
         uchar prefix_char = prefix[i];
@@ -191,6 +194,7 @@ __kernel void generate_sui_address(
         }
     }
 
+    // Check suffix
     for (uint i = 0; i < suffix_len && match; i++) {
         uchar addr_char = address_hex[64 - suffix_len + i];
         uchar suffix_char = suffix[i];
@@ -202,6 +206,45 @@ __kernel void generate_sui_address(
         
         if (addr_char != suffix_char) {
             match = 0;
+        }
+    }
+
+    // Check contains - search for pattern in middle section
+    if (match && contains_len > 0) {
+        uint start_pos = prefix_len;
+        uint end_pos = 64 - suffix_len;
+        
+        if (end_pos <= start_pos || contains_len > end_pos - start_pos) {
+            match = 0;
+        } else {
+            unsigned int contains_found = 0;
+            
+            // Sliding window search through middle section
+            for (uint pos = start_pos; pos <= end_pos - contains_len && !contains_found; pos++) {
+                unsigned int pos_match = 1;
+                
+                for (uint i = 0; i < contains_len && pos_match; i++) {
+                    uchar addr_char = address_hex[pos + i];
+                    uchar contains_char = contains[i];
+                    
+                    if (!case_sensitive) {
+                        addr_char = to_lower_char(addr_char);
+                        contains_char = to_lower_char(contains_char);
+                    }
+                    
+                    if (addr_char != contains_char) {
+                        pos_match = 0;
+                    }
+                }
+                
+                if (pos_match) {
+                    contains_found = 1;
+                }
+            }
+            
+            if (!contains_found) {
+                match = 0;
+            }
         }
     }
 

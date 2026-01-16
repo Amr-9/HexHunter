@@ -64,6 +64,7 @@ type SolanaGPUGenerator struct {
 	bufGroupOffset   C.cl_mem // Batch offset multiplier (1 byte)
 	bufPrefix        C.cl_mem // Runtime prefix bytes (max 44 bytes)
 	bufSuffix        C.cl_mem // Runtime suffix bytes (max 44 bytes)
+	bufContains      C.cl_mem // Runtime contains bytes (max 44 bytes)
 
 	// stats
 	attempts  uint64
@@ -72,6 +73,7 @@ type SolanaGPUGenerator struct {
 	// matching config
 	prefix        string
 	suffix        string
+	contains      string
 	caseSensitive bool
 	matcher       *SolanaMatcher
 }
@@ -111,7 +113,8 @@ func (g *SolanaGPUGenerator) Start(ctx context.Context, config *generator.Config
 
 	g.prefix = config.Prefix
 	g.suffix = config.Suffix
-	g.matcher = NewSolanaMatcher(config.Prefix, config.Suffix)
+	g.contains = config.Contains
+	g.matcher = NewSolanaMatcher(config.Prefix, config.Suffix, config.Contains)
 
 	// Initialize OpenCL with the specific prefix/suffix
 	if err := g.initOpenCL(); err != nil {
@@ -340,9 +343,16 @@ func (g *SolanaGPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufSuffix failed: %d", ret)
 	}
 
-	// Upload prefix/suffix data to GPU
+	// 7. Contains buffer (max 44 bytes)
+	g.bufContains = C.clCreateBuffer(g.clCtx, C.CL_MEM_READ_ONLY, 44, nil, &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufContains failed: %d", ret)
+	}
+
+	// Upload prefix/suffix/contains data to GPU
 	prefixBytes := []byte(g.prefix)
 	suffixBytes := []byte(g.suffix)
+	containsBytes := []byte(g.contains)
 
 	if len(prefixBytes) > 0 {
 		ret = C.clEnqueueWriteBuffer(g.queue, g.bufPrefix, C.CL_TRUE, 0,
@@ -360,27 +370,38 @@ func (g *SolanaGPUGenerator) createBuffers() error {
 		}
 	}
 
+	if len(containsBytes) > 0 {
+		ret = C.clEnqueueWriteBuffer(g.queue, g.bufContains, C.CL_TRUE, 0,
+			C.size_t(len(containsBytes)), unsafe.Pointer(&containsBytes[0]), 0, nil, nil)
+		if ret != C.CL_SUCCESS {
+			return fmt.Errorf("failed to write contains: %d", ret)
+		}
+	}
+
 	// Set kernel arguments
 	// Kernel signature: generate_pubkey(seed, out, occupied_bytes, group_offset,
-	//                                   prefix, suffix, prefix_len, suffix_len, case_sensitive)
+	//                                   prefix, suffix, contains, prefix_len, suffix_len, contains_len, case_sensitive)
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufSeed)), unsafe.Pointer(&g.bufSeed))
 	C.clSetKernelArg(g.kernel, 1, C.size_t(unsafe.Sizeof(g.bufOutput)), unsafe.Pointer(&g.bufOutput))
 	C.clSetKernelArg(g.kernel, 2, C.size_t(unsafe.Sizeof(g.bufOccupiedBytes)), unsafe.Pointer(&g.bufOccupiedBytes))
 	C.clSetKernelArg(g.kernel, 3, C.size_t(unsafe.Sizeof(g.bufGroupOffset)), unsafe.Pointer(&g.bufGroupOffset))
 	C.clSetKernelArg(g.kernel, 4, C.size_t(unsafe.Sizeof(g.bufPrefix)), unsafe.Pointer(&g.bufPrefix))
 	C.clSetKernelArg(g.kernel, 5, C.size_t(unsafe.Sizeof(g.bufSuffix)), unsafe.Pointer(&g.bufSuffix))
+	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(g.bufContains)), unsafe.Pointer(&g.bufContains))
 
 	// Pass lengths and case sensitivity as values
 	prefixLen := C.uint(len(g.prefix))
 	suffixLen := C.uint(len(g.suffix))
+	containsLen := C.uint(len(g.contains))
 	caseSensitive := C.uint(1)
 	if !g.caseSensitive {
 		caseSensitive = C.uint(0)
 	}
 
-	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
-	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
-	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(caseSensitive)), unsafe.Pointer(&caseSensitive))
+	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
+	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(containsLen)), unsafe.Pointer(&containsLen))
+	C.clSetKernelArg(g.kernel, 10, C.size_t(unsafe.Sizeof(caseSensitive)), unsafe.Pointer(&caseSensitive))
 
 	return nil
 }
@@ -403,6 +424,9 @@ func (g *SolanaGPUGenerator) releaseBuffers() {
 	}
 	if g.bufSuffix != nil {
 		C.clReleaseMemObject(g.bufSuffix)
+	}
+	if g.bufContains != nil {
+		C.clReleaseMemObject(g.bufContains)
 	}
 }
 

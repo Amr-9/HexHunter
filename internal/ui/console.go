@@ -52,7 +52,15 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 	case generator.Solana:
 		// Solana format (no prefix)
 		if config.Prefix != "" {
-			fmt.Printf(" %s%s%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
+			fmt.Printf(" %s%s%s%s", ColorBold, ColorCyan, config.Prefix, ColorReset)
+		}
+		if config.Contains != "" {
+			fmt.Printf("%s...%s%s%s", ColorDim, ColorCyan+ColorBold, config.Contains, ColorReset)
+			if config.Suffix == "" {
+				fmt.Printf("%s...%s", ColorDim, ColorReset)
+			}
+		} else if config.Prefix != "" {
+			fmt.Printf("%s...%s", ColorDim, ColorReset)
 		}
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
@@ -82,9 +90,17 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 	case generator.Tron:
 		// Tron format (T prefix)
 		if config.Prefix != "" {
-			fmt.Printf(" %s%sT%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
+			fmt.Printf(" %s%sT%s%s", ColorBold, ColorCyan, config.Prefix, ColorReset)
 		} else {
-			fmt.Printf(" %s%sT%s...%s", ColorBold, ColorCyan, ColorDim, ColorReset)
+			fmt.Printf(" %s%sT%s", ColorBold, ColorCyan, ColorReset)
+		}
+		if config.Contains != "" {
+			fmt.Printf("%s...%s%s%s", ColorDim, ColorCyan+ColorBold, config.Contains, ColorReset)
+			if config.Suffix == "" {
+				fmt.Printf("%s...%s", ColorDim, ColorReset)
+			}
+		} else if config.Prefix != "" {
+			fmt.Printf("%s...%s", ColorDim, ColorReset)
 		}
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)

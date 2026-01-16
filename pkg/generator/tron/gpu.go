@@ -66,6 +66,7 @@ type TronGPUGenerator struct {
 	bufFlag      C.cl_mem // Found flag (4 bytes)
 	bufPrefix    C.cl_mem // Prefix pattern
 	bufSuffix    C.cl_mem // Suffix pattern
+	bufContains  C.cl_mem // Contains pattern
 
 	// secp256k1 curve for CPU calculations
 	curve *secp256k1.BitCurve
@@ -75,8 +76,9 @@ type TronGPUGenerator struct {
 	startTime time.Time
 
 	// Pattern config
-	prefix string
-	suffix string
+	prefix   string
+	suffix   string
+	contains string
 }
 
 // NewTronGPUGenerator creates a new GPU-based generator for Tron.
@@ -115,6 +117,7 @@ func (g *TronGPUGenerator) Start(ctx context.Context, config *generator.Config) 
 
 	g.prefix = config.Prefix
 	g.suffix = config.Suffix
+	g.contains = config.Contains
 
 	go g.runGPU(ctx, resultChan, config)
 	return resultChan, nil
@@ -347,9 +350,19 @@ func (g *TronGPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufSuffix failed: %d", ret)
 	}
 
+	// 7. Contains pattern
+	containsData := make([]byte, 44)
+	copy(containsData, g.contains)
+	g.bufContains = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
+		44, unsafe.Pointer(&containsData[0]), &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufContains failed: %d", ret)
+	}
+
 	// Set Kernel Args
 	prefixLen := C.uint(len(g.prefix))
 	suffixLen := C.uint(len(g.suffix))
+	containsLen := C.uint(len(g.contains))
 
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufBasePoint)), unsafe.Pointer(&g.bufBasePoint))
 	C.clSetKernelArg(g.kernel, 1, C.size_t(unsafe.Sizeof(g.bufTable)), unsafe.Pointer(&g.bufTable))
@@ -357,8 +370,10 @@ func (g *TronGPUGenerator) createBuffers() error {
 	C.clSetKernelArg(g.kernel, 3, C.size_t(unsafe.Sizeof(g.bufFlag)), unsafe.Pointer(&g.bufFlag))
 	C.clSetKernelArg(g.kernel, 4, C.size_t(unsafe.Sizeof(g.bufPrefix)), unsafe.Pointer(&g.bufPrefix))
 	C.clSetKernelArg(g.kernel, 5, C.size_t(unsafe.Sizeof(g.bufSuffix)), unsafe.Pointer(&g.bufSuffix))
-	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
-	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(g.bufContains)), unsafe.Pointer(&g.bufContains))
+	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
+	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(containsLen)), unsafe.Pointer(&containsLen))
 
 	return nil
 }
@@ -421,6 +436,9 @@ func (g *TronGPUGenerator) releaseBuffers() {
 	}
 	if g.bufSuffix != nil {
 		C.clReleaseMemObject(g.bufSuffix)
+	}
+	if g.bufContains != nil {
+		C.clReleaseMemObject(g.bufContains)
 	}
 }
 

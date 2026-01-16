@@ -80,17 +80,17 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 	// Route to appropriate worker based on network
 	switch config.Network {
 	case generator.Solana:
-		matcher := solana.NewSolanaMatcher(config.Prefix, config.Suffix)
+		matcher := solana.NewSolanaMatcher(config.Prefix, config.Suffix, config.Contains)
 		for i := 0; i < workers; i++ {
 			go g.workerSolana(ctx, matcher, resultChan, done, &closeOnce)
 		}
 	case generator.Aptos:
-		matcher := aptos.NewAptosMatcher(config.Prefix, config.Suffix)
+		matcher := aptos.NewAptosMatcher(config.Prefix, config.Suffix, config.Contains)
 		for i := 0; i < workers; i++ {
 			go g.workerAptos(ctx, matcher, resultChan, done, &closeOnce)
 		}
 	case generator.Sui:
-		matcher := sui.NewSuiMatcher(config.Prefix, config.Suffix)
+		matcher := sui.NewSuiMatcher(config.Prefix, config.Suffix, config.Contains)
 		for i := 0; i < workers; i++ {
 			go g.workerSui(ctx, matcher, resultChan, done, &closeOnce)
 		}
@@ -105,7 +105,7 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 			go g.workerBitcoin(ctx, matcher, addrType, resultChan, done, &closeOnce)
 		}
 	case generator.Tron:
-		matcher := tron.NewTronMatcher(config.Prefix, config.Suffix)
+		matcher := tron.NewTronMatcher(config.Prefix, config.Suffix, config.Contains)
 		for i := 0; i < workers; i++ {
 			go g.workerTron(ctx, matcher, resultChan, done, &closeOnce)
 		}

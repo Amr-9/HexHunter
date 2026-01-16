@@ -11,20 +11,22 @@ import (
 // Aptos addresses are 64-character hex strings with 0x prefix.
 // Address = SHA3-256(pubkey || 0x00)
 type AptosMatcher struct {
-	prefix string
-	suffix string
+	prefix   string
+	suffix   string
+	contains string
 }
 
 // NewAptosMatcher creates a new Aptos address matcher.
 // Patterns are case-insensitive for Aptos (Hex).
-func NewAptosMatcher(prefix, suffix string) *AptosMatcher {
+func NewAptosMatcher(prefix, suffix, contains string) *AptosMatcher {
 	return &AptosMatcher{
-		prefix: strings.ToLower(prefix),
-		suffix: strings.ToLower(suffix),
+		prefix:   strings.ToLower(prefix),
+		suffix:   strings.ToLower(suffix),
+		contains: strings.ToLower(contains),
 	}
 }
 
-// Matches checks if an Aptos address matches the prefix and suffix criteria.
+// Matches checks if an Aptos address matches the prefix, suffix, and contains criteria.
 // This is case-insensitive matching (hex addresses).
 func (m *AptosMatcher) Matches(address string) bool {
 	// Remove 0x prefix for matching
@@ -38,6 +40,23 @@ func (m *AptosMatcher) Matches(address string) bool {
 	// Check suffix (case-insensitive)
 	if m.suffix != "" && !strings.HasSuffix(addr, m.suffix) {
 		return false
+	}
+
+	// Check contains in the middle section
+	if m.contains != "" {
+		// Calculate middle section (between prefix and suffix)
+		startIdx := len(m.prefix)
+		endIdx := len(addr) - len(m.suffix)
+
+		if startIdx >= endIdx || endIdx-startIdx < len(m.contains) {
+			return false
+		}
+
+		// Search for contains in middle section (case-insensitive, already lowercased)
+		middleSection := addr[startIdx:endIdx]
+		if !strings.Contains(middleSection, m.contains) {
+			return false
+		}
 	}
 
 	return true

@@ -208,16 +208,13 @@ func GetInputFromUser(network generator.Network) (string, string, string) {
 
 	switch network {
 	case generator.Solana:
-		p, s := getSolanaInput(reader)
-		return p, s, ""
+		return getSolanaInput(reader)
 	case generator.Aptos, generator.Sui:
-		p, s := getAptosInput(reader)
-		return p, s, ""
+		return getAptosInput(reader)
 	case generator.Bitcoin:
 		return getBitcoinInput(reader, SelectedBitcoinAddressType)
 	case generator.Tron:
-		p, s := getTronInput(reader)
-		return p, s, ""
+		return getTronInput(reader)
 	default:
 		return getEthereumInput(reader)
 	}
@@ -257,7 +254,7 @@ func getEthereumInput(reader *bufio.Reader) (string, string, string) {
 	return prefix, suffix, contains
 }
 
-func getSolanaInput(reader *bufio.Reader) (string, string) {
+func getSolanaInput(reader *bufio.Reader) (string, string, string) {
 	fmt.Printf("    %sPrefix%s (...): ", ColorCyan, ColorReset)
 	prefixInput, _ := reader.ReadString('\n')
 	prefix := strings.TrimSpace(prefixInput)
@@ -267,6 +264,17 @@ func getSolanaInput(reader *bufio.Reader) (string, string) {
 		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
 		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
 		prefix = ""
+	}
+
+	fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+	containsInput, _ := reader.ReadString('\n')
+	contains := strings.TrimSpace(containsInput)
+
+	if contains != "" && !solana.IsValidBase58(contains) {
+		invalidChars := solana.InvalidBase58Chars(contains)
+		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+		contains = ""
 	}
 
 	fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
@@ -280,10 +288,10 @@ func getSolanaInput(reader *bufio.Reader) (string, string) {
 		suffix = ""
 	}
 
-	return prefix, suffix
+	return prefix, suffix, contains
 }
 
-func getAptosInput(reader *bufio.Reader) (string, string) {
+func getAptosInput(reader *bufio.Reader) (string, string, string) {
 	fmt.Printf("    %sPrefix%s (0x...): ", ColorCyan, ColorReset)
 	prefixInput, _ := reader.ReadString('\n')
 	prefix := strings.TrimSpace(prefixInput)
@@ -292,6 +300,16 @@ func getAptosInput(reader *bufio.Reader) (string, string) {
 	if prefix != "" && !isValidHex(prefix) {
 		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
 		prefix = ""
+	}
+
+	fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+	containsInput, _ := reader.ReadString('\n')
+	contains := strings.TrimSpace(containsInput)
+	contains = strings.TrimPrefix(strings.ToLower(contains), "0x")
+
+	if contains != "" && !isValidHex(contains) {
+		fmt.Printf("    %s⚠ Invalid! Hex only (0-9, a-f)%s\n", ColorRed, ColorReset)
+		contains = ""
 	}
 
 	fmt.Printf("    %sSuffix%s (...xxx): ", ColorCyan, ColorReset)
@@ -304,7 +322,7 @@ func getAptosInput(reader *bufio.Reader) (string, string) {
 		suffix = ""
 	}
 
-	return prefix, suffix
+	return prefix, suffix, contains
 }
 
 // ContinueAction represents what the user wants to do after finding an address
@@ -456,7 +474,7 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 
 // getTronInput handles pattern input for Tron addresses.
 // Tron addresses use Base58 encoding and always start with 'T'.
-func getTronInput(reader *bufio.Reader) (string, string) {
+func getTronInput(reader *bufio.Reader) (string, string, string) {
 	fmt.Printf("    %sPrefix%s (after T): ", ColorCyan, ColorReset)
 	fmt.Printf("%s(Case-sensitive!)%s ", ColorYellow, ColorReset)
 	prefixInput, _ := reader.ReadString('\n')
@@ -482,6 +500,18 @@ func getTronInput(reader *bufio.Reader) (string, string) {
 		prefix = ""
 	}
 
+	fmt.Printf("    %sContains%s (middle): ", ColorCyan, ColorReset)
+	fmt.Printf("%s(Case-sensitive!)%s ", ColorYellow, ColorReset)
+	containsInput, _ := reader.ReadString('\n')
+	contains := strings.TrimSpace(containsInput)
+
+	if contains != "" && !tron.IsValidBase58(contains) {
+		invalidChars := tron.InvalidBase58Chars(contains)
+		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+		contains = ""
+	}
+
 	fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
 	suffixInput, _ := reader.ReadString('\n')
 	suffix := strings.TrimSpace(suffixInput)
@@ -493,5 +523,5 @@ func getTronInput(reader *bufio.Reader) (string, string) {
 		suffix = ""
 	}
 
-	return prefix, suffix
+	return prefix, suffix, contains
 }

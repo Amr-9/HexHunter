@@ -63,9 +63,10 @@ type SuiGPUGenerator struct {
 	startTime time.Time
 
 	// matching config
-	prefix  string
-	suffix  string
-	matcher *SuiMatcher
+	prefix   string
+	suffix   string
+	contains string
+	matcher  *SuiMatcher
 }
 
 // NewSuiGPUGenerator creates a new Sui GPU-based generator.
@@ -99,7 +100,8 @@ func (g *SuiGPUGenerator) Start(ctx context.Context, config *generator.Config) (
 
 	g.prefix = config.Prefix
 	g.suffix = config.Suffix
-	g.matcher = NewSuiMatcher(config.Prefix, config.Suffix)
+	g.contains = config.Contains
+	g.matcher = NewSuiMatcher(config.Prefix, config.Suffix, config.Contains)
 
 	if err := g.initOpenCL(); err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenCL: %w", err)
@@ -303,9 +305,17 @@ func (g *SuiGPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufSuffix failed: %d", ret)
 	}
 
-	// Write prefix/suffix to GPU
+	// 7. Contains buffer (64 bytes max for hex address)
+	var bufContains C.cl_mem
+	bufContains = C.clCreateBuffer(g.clCtx, C.CL_MEM_READ_ONLY, 64, nil, &ret)
+	if ret != C.CL_SUCCESS {
+		return fmt.Errorf("bufContains failed: %d", ret)
+	}
+
+	// Write prefix/suffix/contains to GPU
 	prefixBytes := []byte(g.prefix)
 	suffixBytes := []byte(g.suffix)
+	containsBytes := []byte(g.contains)
 
 	if len(prefixBytes) > 0 {
 		C.clEnqueueWriteBuffer(g.queue, g.bufPrefix, C.CL_TRUE, 0,
@@ -317,20 +327,28 @@ func (g *SuiGPUGenerator) createBuffers() error {
 			C.size_t(len(suffixBytes)), unsafe.Pointer(&suffixBytes[0]), 0, nil, nil)
 	}
 
+	if len(containsBytes) > 0 {
+		C.clEnqueueWriteBuffer(g.queue, bufContains, C.CL_TRUE, 0,
+			C.size_t(len(containsBytes)), unsafe.Pointer(&containsBytes[0]), 0, nil, nil)
+	}
+
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufSeed)), unsafe.Pointer(&g.bufSeed))
 	C.clSetKernelArg(g.kernel, 1, C.size_t(unsafe.Sizeof(g.bufOutput)), unsafe.Pointer(&g.bufOutput))
 	C.clSetKernelArg(g.kernel, 2, C.size_t(unsafe.Sizeof(g.bufOccupiedBytes)), unsafe.Pointer(&g.bufOccupiedBytes))
 	C.clSetKernelArg(g.kernel, 3, C.size_t(unsafe.Sizeof(g.bufGroupOffset)), unsafe.Pointer(&g.bufGroupOffset))
 	C.clSetKernelArg(g.kernel, 4, C.size_t(unsafe.Sizeof(g.bufPrefix)), unsafe.Pointer(&g.bufPrefix))
 	C.clSetKernelArg(g.kernel, 5, C.size_t(unsafe.Sizeof(g.bufSuffix)), unsafe.Pointer(&g.bufSuffix))
+	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(bufContains)), unsafe.Pointer(&bufContains))
 
 	prefixLen := C.uint(len(g.prefix))
 	suffixLen := C.uint(len(g.suffix))
+	containsLen := C.uint(len(g.contains))
 	caseSensitive := C.uint(0) // Hex is case-insensitive
 
-	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
-	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
-	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(caseSensitive)), unsafe.Pointer(&caseSensitive))
+	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
+	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(containsLen)), unsafe.Pointer(&containsLen))
+	C.clSetKernelArg(g.kernel, 10, C.size_t(unsafe.Sizeof(caseSensitive)), unsafe.Pointer(&caseSensitive))
 
 	return nil
 }

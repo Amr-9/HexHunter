@@ -10,20 +10,22 @@ import (
 // SuiMatcher handles Sui address matching with hex validation.
 // Sui addresses are 32 bytes (64 hex chars) with 0x prefix.
 type SuiMatcher struct {
-	prefix string
-	suffix string
+	prefix   string
+	suffix   string
+	contains string
 }
 
 // NewSuiMatcher creates a new Sui address matcher.
 // Patterns should be lowercase hex characters without the 0x prefix.
-func NewSuiMatcher(prefix, suffix string) *SuiMatcher {
+func NewSuiMatcher(prefix, suffix, contains string) *SuiMatcher {
 	return &SuiMatcher{
-		prefix: strings.ToLower(prefix),
-		suffix: strings.ToLower(suffix),
+		prefix:   strings.ToLower(prefix),
+		suffix:   strings.ToLower(suffix),
+		contains: strings.ToLower(contains),
 	}
 }
 
-// Matches checks if the address matches the prefix and suffix patterns.
+// Matches checks if the address matches the prefix, suffix, and contains patterns.
 // The address should be in the format 0x... (64 hex chars).
 func (m *SuiMatcher) Matches(address string) bool {
 	// Remove 0x prefix for matching
@@ -38,6 +40,23 @@ func (m *SuiMatcher) Matches(address string) bool {
 	// Check suffix
 	if m.suffix != "" && !strings.HasSuffix(addr, m.suffix) {
 		return false
+	}
+
+	// Check contains in the middle section
+	if m.contains != "" {
+		// Calculate middle section (between prefix and suffix)
+		startIdx := len(m.prefix)
+		endIdx := len(addr) - len(m.suffix)
+
+		if startIdx >= endIdx || endIdx-startIdx < len(m.contains) {
+			return false
+		}
+
+		// Search for contains in middle section (case-insensitive, already lowercased)
+		middleSection := addr[startIdx:endIdx]
+		if !strings.Contains(middleSection, m.contains) {
+			return false
+		}
 	}
 
 	return true

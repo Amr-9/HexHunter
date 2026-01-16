@@ -319,8 +319,10 @@ __kernel void tron_generate_address(
     __global uint *found_flag,             // Atomic flag
     __constant uchar *prefix,              // Prefix pattern
     __constant uchar *suffix,              // Suffix pattern
+    __constant uchar *contains,            // Contains pattern
     uint prefix_len,
-    uint suffix_len
+    uint suffix_len,
+    uint contains_len
 ) {
     uint gid = get_global_id(0);
     uint lid = get_local_id(0);
@@ -490,6 +492,37 @@ __kernel void tron_generate_address(
     // Check suffix
     for(uint i = 0; i < suffix_len && match; i++) {
         if(address[addr_len - suffix_len + i] != suffix[i]) match = false;
+    }
+    
+    // Check contains - search for pattern in middle section
+    if(match && contains_len > 0) {
+        uint start_pos = 1 + prefix_len;  // Skip 'T' + prefix
+        uint end_pos = addr_len - suffix_len;
+        
+        if(end_pos <= start_pos || contains_len > end_pos - start_pos) {
+            match = false;
+        } else {
+            bool contains_found = false;
+            
+            // Sliding window search through middle section
+            for(uint pos = start_pos; pos <= end_pos - contains_len && !contains_found; pos++) {
+                bool pos_match = true;
+                
+                for(uint i = 0; i < contains_len && pos_match; i++) {
+                    if(address[pos + i] != contains[i]) {
+                        pos_match = false;
+                    }
+                }
+                
+                if(pos_match) {
+                    contains_found = true;
+                }
+            }
+            
+            if(!contains_found) {
+                match = false;
+            }
+        }
     }
     
     // 11. If match, write result
