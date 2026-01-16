@@ -21,6 +21,12 @@ func DeriveAddress(pubKeyBytes []byte) string {
 	// Take last 20 bytes of the hash
 	addressBytes := hash[len(hash)-20:]
 
+	return DeriveAddressFromBytes(addressBytes)
+}
+
+// DeriveAddressFromBytes derives a Tron address from raw 20-byte address hash.
+// This is used by GPU generator which outputs raw address bytes.
+func DeriveAddressFromBytes(addressBytes []byte) string {
 	// Prepend Tron mainnet prefix (0x41)
 	data := make([]byte, 21)
 	data[0] = TronMainnetPrefix

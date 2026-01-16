@@ -1,5 +1,12 @@
-/* vanity_v4.cl - Phase 4: Parallel Batch Inversion (Corrected)
- * Uses Blelloch scan for parallel prefix products + Montgomery batch inversion
+/* tron_kernel.cl - Optimized Tron Address Generation Kernel
+ * 
+ * This kernel performs:
+ * 1. secp256k1 point addition using precomputed table
+ * 2. Keccak-256 hash of public key
+ * 3. Base58Check encoding (0x41 prefix + address + checksum)
+ * 4. In-kernel pattern matching (prefix/suffix)
+ * 
+ * Only returns when a match is found, eliminating 20MB transfers!
  */
 
 #pragma OPENCL EXTENSION cl_khr_global_int32_base_atomics : enable
@@ -14,10 +21,25 @@ typedef struct { uint256 x; uint256 y; } point_a;
 __constant uint256 P_CONST = {{ 0xFFFFFC2F, 0xFFFFFFFE, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF }};
 __constant uint256 ONE = {{ 1, 0, 0, 0, 0, 0, 0, 0 }};
 
+/* Base58 alphabet */
+__constant char BASE58_ALPHABET[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
 /* Keccak Tables */
 __constant ulong KECCAK_RC[24] = { 0x0000000000000001UL, 0x0000000000008082UL, 0x800000000000808aUL, 0x8000000080008000UL, 0x000000000000808bUL, 0x0000000080000001UL, 0x8000000080008081UL, 0x8000000000008009UL, 0x000000000000008aUL, 0x0000000000000088UL, 0x0000000080008009UL, 0x000000008000000aUL, 0x000000008000808bUL, 0x800000000000008bUL, 0x8000000000008089UL, 0x8000000000008003UL, 0x8000000000008002UL, 0x8000000000000080UL, 0x000000000000800aUL, 0x800000008000000aUL, 0x8000000080008081UL, 0x8000000000008080UL, 0x0000000080000001UL, 0x8000000080008008UL };
 __constant int KECCAK_ROT[24] = { 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44 };
 __constant int KECCAK_PI[24] = { 10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1 };
+
+/* SHA256 constants */
+__constant uint SHA256_K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+};
 
 /* === Math Functions === */
 void load_const(uint256 *d, __constant const uint256 *s) { for(int i=0;i<8;i++) d->w[i]=s->w[i]; }
@@ -165,32 +187,151 @@ void keccak_f1600(ulong *st) {
     }
 }
 
-/* === Main Kernel === 
- * Uses semi-parallel batch inversion:
- * - Parallel up-sweep to compute prefix products
- * - Single mod_inv on total product
- * - Parallel down-sweep to distribute inverses
+/* === SHA-256 for checksum === */
+uint rotr(uint x, uint n) { return (x >> n) | (x << (32 - n)); }
+uint ch(uint x, uint y, uint z) { return (x & y) ^ (~x & z); }
+uint maj(uint x, uint y, uint z) { return (x & y) ^ (x & z) ^ (y & z); }
+uint sigma0(uint x) { return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22); }
+uint sigma1(uint x) { return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25); }
+uint gamma0(uint x) { return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3); }
+uint gamma1(uint x) { return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10); }
+
+void sha256_block(uint *state, const uchar *data) {
+    uint w[64];
+    for(int i = 0; i < 16; i++) {
+        w[i] = ((uint)data[i*4] << 24) | ((uint)data[i*4+1] << 16) | 
+               ((uint)data[i*4+2] << 8) | (uint)data[i*4+3];
+    }
+    for(int i = 16; i < 64; i++) {
+        w[i] = gamma1(w[i-2]) + w[i-7] + gamma0(w[i-15]) + w[i-16];
+    }
+    
+    uint a = state[0], b = state[1], c = state[2], d = state[3];
+    uint e = state[4], f = state[5], g = state[6], h = state[7];
+    
+    for(int i = 0; i < 64; i++) {
+        uint t1 = h + sigma1(e) + ch(e, f, g) + SHA256_K[i] + w[i];
+        uint t2 = sigma0(a) + maj(a, b, c);
+        h = g; g = f; f = e; e = d + t1;
+        d = c; c = b; b = a; a = t1 + t2;
+    }
+    
+    state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+    state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+}
+
+void sha256(const uchar *data, uint len, uchar *hash) {
+    uint state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    
+    uchar block[64];
+    uint remaining = len;
+    uint offset = 0;
+    
+    while(remaining >= 64) {
+        for(int i = 0; i < 64; i++) block[i] = data[offset + i];
+        sha256_block(state, block);
+        offset += 64;
+        remaining -= 64;
+    }
+    
+    for(uint i = 0; i < remaining; i++) block[i] = data[offset + i];
+    block[remaining] = 0x80;
+    for(uint i = remaining + 1; i < 56; i++) block[i] = 0;
+    
+    if(remaining >= 56) {
+        for(uint i = remaining + 1; i < 64; i++) block[i] = 0;
+        sha256_block(state, block);
+        for(int i = 0; i < 56; i++) block[i] = 0;
+    }
+    
+    ulong bits = (ulong)len * 8;
+    block[56] = (bits >> 56) & 0xff;
+    block[57] = (bits >> 48) & 0xff;
+    block[58] = (bits >> 40) & 0xff;
+    block[59] = (bits >> 32) & 0xff;
+    block[60] = (bits >> 24) & 0xff;
+    block[61] = (bits >> 16) & 0xff;
+    block[62] = (bits >> 8) & 0xff;
+    block[63] = bits & 0xff;
+    sha256_block(state, block);
+    
+    for(int i = 0; i < 8; i++) {
+        hash[i*4] = (state[i] >> 24) & 0xff;
+        hash[i*4+1] = (state[i] >> 16) & 0xff;
+        hash[i*4+2] = (state[i] >> 8) & 0xff;
+        hash[i*4+3] = state[i] & 0xff;
+    }
+}
+
+/* === Base58 encoding for Tron === 
+ * Tron uses 25 bytes: 0x41 + 20 address bytes + 4 checksum bytes
+ * Output: up to 34 characters
  */
-__kernel void compute_address(
-    __global const uchar *base_point,
-    __global const uchar *table,
-    __global uchar *output,              // Only 64 bytes now (single result)
-    __global uint *found_flag,
-    __global uint *found_gid,            // Store winning GID
-    __constant uchar *target_prefix,     // Prefix pattern (up to 20 bytes)
-    uint prefix_len,                     // Prefix length in bytes (rounded up)
-    __constant uchar *target_suffix,     // Suffix pattern (up to 20 bytes)  
-    uint suffix_len,                     // Suffix length in bytes (rounded up)
-    uint prefix_is_odd,                  // 1 if prefix hex length was odd
-    uint suffix_is_odd                   // 1 if suffix hex length was odd
+int base58_encode_25(const uchar *input, uchar *output) {
+    // Convert 25 bytes to base58
+    // Using big number division approach
+    uchar temp[25];
+    for(int i = 0; i < 25; i++) temp[i] = input[i];
+    
+    int out_idx = 0;
+    uchar result[35];  // Max 34 chars + 1
+    
+    while(1) {
+        // Check if all zeros
+        int all_zero = 1;
+        for(int i = 0; i < 25; i++) {
+            if(temp[i] != 0) { all_zero = 0; break; }
+        }
+        if(all_zero) break;
+        
+        // Divide by 58
+        uint remainder = 0;
+        for(int i = 0; i < 25; i++) {
+            uint val = remainder * 256 + temp[i];
+            temp[i] = val / 58;
+            remainder = val % 58;
+        }
+        result[out_idx++] = remainder;
+    }
+    
+    // Count leading zeros in input
+    int leading_zeros = 0;
+    for(int i = 0; i < 25 && input[i] == 0; i++) leading_zeros++;
+    
+    // Reverse and add leading '1's
+    int final_len = 0;
+    for(int i = 0; i < leading_zeros; i++) {
+        output[final_len++] = '1';
+    }
+    for(int i = out_idx - 1; i >= 0; i--) {
+        output[final_len++] = BASE58_ALPHABET[result[i]];
+    }
+    
+    return final_len;
+}
+
+/* === Main Kernel === */
+__kernel void tron_generate_address(
+    __global const uchar *base_point,      // BasePoint (Jacobian, 96 bytes)
+    __global const uchar *table,           // Precomputed table (64 MB)
+    __global uchar *output,                // Output: found_flag(4) + gid(4) + address(34) = 42 bytes
+    __global uint *found_flag,             // Atomic flag
+    __constant uchar *prefix,              // Prefix pattern
+    __constant uchar *suffix,              // Suffix pattern
+    uint prefix_len,
+    uint suffix_len
 ) {
     uint gid = get_global_id(0);
     uint lid = get_local_id(0);
     
-    // Shared memory
-    __local uint256 Z_arr[WORKGROUP_SIZE];        // Original Z values  
-    __local uint256 prefix[WORKGROUP_SIZE];       // Prefix products
-    __local uint256 suffix[WORKGROUP_SIZE];       // Suffix products (for distribution)
+    // Early exit if already found
+    if(*found_flag != 0) return;
+    
+    // Shared memory for batch inversion
+    __local uint256 Z_arr[WORKGROUP_SIZE];
+    __local uint256 prefix_prod[WORKGROUP_SIZE];
+    __local uint256 suffix_prod[WORKGROUP_SIZE];
     
     // 1. Load BasePoint
     point_j base;
@@ -216,122 +357,83 @@ __kernel void compute_address(
     j_add_mixed(&result, &base, &tbl);
     uint256 resX = result.x, resY = result.y;
     
-    // 4. Store Z
+    // 4. Store Z for batch inversion
     uint256_copy_local(&Z_arr[lid], &result.z);
-    uint256_copy_local(&prefix[lid], &result.z);
+    uint256_copy_local(&prefix_prod[lid], &result.z);
     barrier(CLK_LOCAL_MEM_FENCE);
     
-    // ========== PARALLEL PREFIX PRODUCT (Up-sweep) ==========
-    // After this: prefix[2^k - 1] contains product of first 2^k elements
+    // Parallel prefix product (up-sweep)
     for (uint stride = 1; stride < WORKGROUP_SIZE; stride <<= 1) {
         uint idx = (lid + 1) * (stride << 1) - 1;
         if (idx < WORKGROUP_SIZE) {
             uint256 left, right, prod;
-            uint256_copy_from_local(&left, &prefix[idx - stride]);
-            uint256_copy_from_local(&right, &prefix[idx]);
+            uint256_copy_from_local(&left, &prefix_prod[idx - stride]);
+            uint256_copy_from_local(&right, &prefix_prod[idx]);
             mod_mul(&prod, &left, &right);
-            uint256_copy_local(&prefix[idx], &prod);
+            uint256_copy_local(&prefix_prod[idx], &prod);
         }
         barrier(CLK_LOCAL_MEM_FENCE);
     }
     
-    // ========== SINGLE INVERSION ==========
+    // Single inversion
     __local uint256 total_inv;
     if (lid == 0) {
         uint256 total;
-        uint256_copy_from_local(&total, &prefix[WORKGROUP_SIZE - 1]);
+        uint256_copy_from_local(&total, &prefix_prod[WORKGROUP_SIZE - 1]);
         uint256 inv;
         mod_inv(&inv, &total);
         uint256_copy_local(&total_inv, &inv);
-        // Set last element to identity for down-sweep
-        load_const(&prefix[WORKGROUP_SIZE - 1], &ONE);
+        load_const(&prefix_prod[WORKGROUP_SIZE - 1], &ONE);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
     
-    // ========== DOWN-SWEEP (Blelloch scan) ==========
+    // Down-sweep
     for (uint stride = WORKGROUP_SIZE >> 1; stride >= 1; stride >>= 1) {
         uint idx = (lid + 1) * (stride << 1) - 1;
         if (idx < WORKGROUP_SIZE) {
             uint left_idx = idx - stride;
             uint256 left_val, right_val, new_left, new_right;
-            
-            uint256_copy_from_local(&left_val, &prefix[left_idx]);
-            uint256_copy_from_local(&right_val, &prefix[idx]);
-            
-            // new_left = right_val (swap)
+            uint256_copy_from_local(&left_val, &prefix_prod[left_idx]);
+            uint256_copy_from_local(&right_val, &prefix_prod[idx]);
             new_left = right_val;
-            // new_right = left_val * right_val
             mod_mul(&new_right, &left_val, &right_val);
-            
-            uint256_copy_local(&prefix[left_idx], &new_left);
-            uint256_copy_local(&prefix[idx], &new_right);
+            uint256_copy_local(&prefix_prod[left_idx], &new_left);
+            uint256_copy_local(&prefix_prod[idx], &new_right);
         }
         barrier(CLK_LOCAL_MEM_FENCE);
     }
     
-    // Now prefix[i] = product of all elements BEFORE index i (exclusive scan)
-    
-    // ========== COMPUTE INDIVIDUAL INVERSES ==========
-    // inv(Z[i]) = prefix[i] * total_inv * suffix[i]
-    // where suffix[i] = product of Z[i+1] * ... * Z[n-1]
-    
-    // Compute suffix products (parallel)
-    uint256_copy_local(&suffix[lid], &Z_arr[lid]);
+    // Compute suffix products
+    uint256_copy_local(&suffix_prod[lid], &Z_arr[lid]);
     barrier(CLK_LOCAL_MEM_FENCE);
     
-    // Suffix scan (right to left)
     for (uint stride = 1; stride < WORKGROUP_SIZE; stride <<= 1) {
         uint256 val;
         if (lid + stride < WORKGROUP_SIZE) {
             uint256 mine, neighbor, prod;
-            uint256_copy_from_local(&mine, &suffix[lid]);
-            uint256_copy_from_local(&neighbor, &suffix[lid + stride]);
+            uint256_copy_from_local(&mine, &suffix_prod[lid]);
+            uint256_copy_from_local(&neighbor, &suffix_prod[lid + stride]);
             mod_mul(&prod, &mine, &neighbor);
             val = prod;
         } else {
-            uint256_copy_from_local(&val, &suffix[lid]);
+            uint256_copy_from_local(&val, &suffix_prod[lid]);
         }
         barrier(CLK_LOCAL_MEM_FENCE);
-        uint256_copy_local(&suffix[lid], &val);
+        uint256_copy_local(&suffix_prod[lid], &val);
         barrier(CLK_LOCAL_MEM_FENCE);
     }
-    
-    // Shift suffix to get exclusive suffix product
-    // suffix[i] should be product of Z[i+1..n-1]
     barrier(CLK_LOCAL_MEM_FENCE);
     
-    // ========== FINAL: Compute invZ[i] ==========
-    // invZ[i] = total_inv * prefix[i] * (product of Z[i+1..n-1])
-    // Simplified: invZ[i] = prefix[i] * total_inv * suffix_exclusive[i]
-    // But for correctness, let's use: invZ[i] = (Z[0]*...*Z[i-1])^(-1) * (Z[0]*...*Z[n-1])^(-1) * (Z[i+1]*...*Z[n-1])
-    // Which simplifies to total_inv * prefix_exclusive[i] * suffix_exclusive[i]
-    
-    // Actually, simpler formula:
-    // After exclusive prefix scan: prefix[i] = Z[0] * Z[1] * ... * Z[i-1]
-    // total_inv = (Z[0] * ... * Z[n-1])^(-1)
-    // inv(Z[i]) = prefix[i] * total_inv * suffix_exclusive[i]
-    //           = prefix[i] * (Z[0]*...*Z[n-1])^(-1) * (Z[i+1]*...*Z[n-1])
-    //           = (Z[0]*...*Z[i-1]) * (Z[0]*...*Z[n-1])^(-1) * (Z[i+1]*...*Z[n-1])
-    // Hmm, this doesn't simplify nicely...
-    
-    // CORRECT Montgomery formula:
-    // inv(Z[i]) = prefix[i] * total_inv * suffix[i+1]
-    // where suffix[i+1] = Z[i+1] * ... * Z[n-1]
-    
+    // Compute invZ
     uint256 invZ, pref_val, tinv;
-    uint256_copy_from_local(&pref_val, &prefix[lid]);
+    uint256_copy_from_local(&pref_val, &prefix_prod[lid]);
     uint256_copy_from_local(&tinv, &total_inv);
-    
-    // Compute prefix[i] * total_inv
     mod_mul(&invZ, &pref_val, &tinv);
-    
-    // Multiply by suffix (Z[i+1] * ... * Z[n-1])
     if (lid < WORKGROUP_SIZE - 1) {
         uint256 suff_val;
-        uint256_copy_from_local(&suff_val, &suffix[lid + 1]);
+        uint256_copy_from_local(&suff_val, &suffix_prod[lid + 1]);
         mod_mul(&invZ, &invZ, &suff_val);
     }
-    // For last thread, suffix is 1 (no elements after), so invZ already correct
     
     // 5. Compute affine coordinates
     uint256 z2, z3, affX, affY;
@@ -340,7 +442,7 @@ __kernel void compute_address(
     mod_mul(&affX, &resX, &z2);
     mod_mul(&affY, &resY, &z3);
     
-    // 6. Serialize public key
+    // 6. Serialize public key and compute Keccak
     ulong state[25] = {0};
     uchar pub[64];
     for(int i=0; i<8; i++) {
@@ -349,66 +451,61 @@ __kernel void compute_address(
         pub[32+i*4]=(wy>>24); pub[32+i*4+1]=(wy>>16); pub[32+i*4+2]=(wy>>8); pub[32+i*4+3]=wy;
     }
     
-    // 7. Keccak
     for(int i=0; i<8; i++) state[i] = ((ulong*)pub)[i];
     state[8] ^= 0x01;
     state[16] ^= 0x8000000000000000UL;
     keccak_f1600(state);
     
-    // 8. In-Kernel Pattern Matching with Nibble Support
+    // 7. Build Tron address data: 0x41 + last 20 bytes of Keccak
     uchar *h = (uchar*)state;
+    uchar addr_data[25];
+    addr_data[0] = 0x41;  // Tron mainnet prefix
+    for(int i = 0; i < 20; i++) {
+        addr_data[1 + i] = h[12 + i];
+    }
+    
+    // 8. Double SHA256 for checksum
+    uchar hash1[32], hash2[32];
+    sha256(addr_data, 21, hash1);
+    sha256(hash1, 32, hash2);
+    
+    // Append first 4 bytes of checksum
+    addr_data[21] = hash2[0];
+    addr_data[22] = hash2[1];
+    addr_data[23] = hash2[2];
+    addr_data[24] = hash2[3];
+    
+    // 9. Base58 encode
+    uchar address[35];
+    int addr_len = base58_encode_25(addr_data, address);
+    
+    // 10. Pattern matching
     bool match = true;
     
-    // Check prefix with nibble support
-    for (uint i = 0; i < prefix_len && match; i++) {
-        uchar addr_byte = h[12 + i];
-        uchar target_byte = target_prefix[i];
-        
-        // Last byte of odd-length prefix: compare HIGH nibble only (0xF0)
-        if (i == prefix_len - 1 && prefix_is_odd) {
-            if ((addr_byte & 0xF0) != (target_byte & 0xF0)) {
-                match = false;
-            }
-        } else {
-            if (addr_byte != target_byte) {
-                match = false;
-            }
-        }
+    // Check prefix (skip first char 'T' since all Tron addresses start with T)
+    for(uint i = 0; i < prefix_len && match; i++) {
+        if(address[1 + i] != prefix[i]) match = false;
     }
     
-    // Check suffix with nibble support
-    // Address bytes 12-31 (20 bytes), suffix matches end of address
-    // For odd suffix: first byte is only low nibble, so effective byte count is (suffix_len - 1) full bytes + 1 nibble
-    // But since we padded with 0 at start, we still have suffix_len bytes, just the first one has garbage in high nibble
-    for (uint i = 0; i < suffix_len && match; i++) {
-        // For odd suffix, the suffix occupies suffix_len bytes but first byte has garbage high nibble
-        // So we match against the last suffix_len bytes of the address
-        uint addr_idx = 12 + (20 - suffix_len) + i;  // Index within address portion
-        uchar addr_byte = h[addr_idx];
-        uchar target_byte = target_suffix[i];
-        
-        // First byte of odd-length suffix: compare LOW nibble only (0x0F)
-        // The target_suffix[0] was padded with 0 at start, so low nibble has the actual first char
-        if (i == 0 && suffix_is_odd) {
-            if ((addr_byte & 0x0F) != (target_byte & 0x0F)) {
-                match = false;
-            }
-        } else {
-            if (addr_byte != target_byte) {
-                match = false;
-            }
-        }
+    // Check suffix
+    for(uint i = 0; i < suffix_len && match; i++) {
+        if(address[addr_len - suffix_len + i] != suffix[i]) match = false;
     }
     
-    // 9. Write ONLY if matched (~99.999% reduction in memory writes!)
-    if (match) {
-        uint old_flag = atomic_xchg(found_flag, 1);
-        // Only first winner writes the result
-        if (old_flag == 0) {
-            atomic_xchg(found_gid, gid);
-            for(int i = 0; i < 20; i++) {
-                output[i] = h[12 + i];
+    // 11. If match, write result
+    if(match) {
+        uint old = atomic_xchg(found_flag, 1);
+        if(old == 0) {
+            // Write GID
+            output[0] = (gid >> 24) & 0xff;
+            output[1] = (gid >> 16) & 0xff;
+            output[2] = (gid >> 8) & 0xff;
+            output[3] = gid & 0xff;
+            // Write address
+            for(int i = 0; i < addr_len && i < 34; i++) {
+                output[4 + i] = address[i];
             }
+            output[4 + addr_len] = 0; // null terminate
         }
     }
 }

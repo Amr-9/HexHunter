@@ -123,6 +123,12 @@ func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 	g.startTime = time.Now()
 	atomic.StoreUint64(&g.attempts, 0)
 
+	// IMPORTANT: Reset prefix/suffix from previous search!
+	g.prefixBytes = nil
+	g.suffixBytes = nil
+	g.prefixIsOdd = false
+	g.suffixIsOdd = false
+
 	if config.Prefix != "" {
 		g.prefixIsOdd = len(config.Prefix)%2 == 1 // Track before padding!
 		g.prefixBytes, _ = hex.DecodeString(padHex(config.Prefix))
