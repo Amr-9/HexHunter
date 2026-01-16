@@ -32,6 +32,10 @@ jobs:
             asset_name: HexHunter-macos-arm64
             goos: darwin
             goarch: arm64
+          - os: macos-13
+            asset_name: HexHunter-macos-amd64
+            goos: darwin
+            goarch: amd64
 
     steps:
       - name: Checkout code
@@ -79,14 +83,27 @@ jobs:
         run: |
           go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
 
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
+      # macOS Apple Silicon (M1/M2/M3) - CPU Only
+      # OpenCL is deprecated on Apple Silicon, keep it CPU for stability
+      - name: Build (macOS ARM64)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
           go build -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
+
+      # macOS Intel - GPU Enabled (OpenCL) ⚡
+      # Intel Macs have stable OpenCL support via OpenCL.framework
+      - name: Build (macOS Intel)
+        if: matrix.goos == 'darwin' && matrix.goarch == 'amd64'
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
 
       # Upload Build Artifacts (always, for debugging)
       - name: Upload Artifact
