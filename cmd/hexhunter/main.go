@@ -175,9 +175,17 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 	case generator.Solana:
 		base = 58 // Base58 for Solana
 	case generator.Bitcoin:
-		// Bitcoin uses Bech32 (32 chars) or Base58 (58 chars) depending on address type
-		// Use average for estimation
-		base = 32
+		// Bitcoin address type determines encoding:
+		// - Taproot (P2TR) / Native SegWit: Bech32/Bech32m = 32 chars
+		// - Legacy (P2PKH) / Nested SegWit (P2SH): Base58 = 58 chars
+		switch ui.SelectedBitcoinAddressType {
+		case generator.AddressTypeTaproot:
+			base = 32 // Bech32m
+		case generator.AddressTypeLegacy, generator.AddressTypeNestedSegWit:
+			base = 58 // Base58
+		default:
+			base = 32 // Default to Bech32
+		}
 	}
 
 	for i := 0; i < totalChars; i++ {
@@ -185,3 +193,4 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 	}
 	return difficulty
 }
+

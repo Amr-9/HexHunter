@@ -3,7 +3,7 @@
 
 # 🎯 HexHunter
 
-### *The Ultimate Ethereum Vanity Address Generator*
+### *The Ultimate Multi-Chain Vanity Address Generator*
 
 [![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8?style=for-the-badge&logo=go)](https://golang.org)
 [![OpenCL](https://img.shields.io/badge/OpenCL-GPU%20Accelerated-76B900?style=for-the-badge&logo=nvidia)](https://www.khronos.org/opencl/)
@@ -11,10 +11,20 @@
 
 <img src="https://img.shields.io/badge/Speed-40M+%20addresses/sec-brightgreen?style=for-the-badge" alt="Speed">
 
+#### Supported Networks
+[![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white)]()
+[![BNB Chain](https://img.shields.io/badge/BNB_Chain-F0B90B?style=for-the-badge&logo=binance&logoColor=black)]()
+[![Arbitrum](https://img.shields.io/badge/Arbitrum-28A0F0?style=for-the-badge&logo=arbitrum&logoColor=white)]()
+[![Base](https://img.shields.io/badge/Base-0052FF?style=for-the-badge&logo=coinbase&logoColor=white)]()
+[![Solana](https://img.shields.io/badge/Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white)]()
+[![Aptos](https://img.shields.io/badge/Aptos-000000?style=for-the-badge&logo=aptos&logoColor=white)]()
+[![Sui](https://img.shields.io/badge/Sui-6FBCF0?style=for-the-badge&logo=sui&logoColor=white)]()
+[![Bitcoin](https://img.shields.io/badge/Bitcoin-F7931A?style=for-the-badge&logo=bitcoin&logoColor=white)]()
+
 ---
 ![HexHunter](Screenshots/hexhunter.gif)
 
-**Generate custom Ethereum addresses with your desired prefix or suffix at blazing speeds using GPU acceleration.**
+**Generate custom vanity addresses for multiple blockchains with your desired prefix or suffix at blazing speeds using GPU acceleration.**
 
 [Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Performance](#-performance) • [How It Works](#-how-it-works) • [Security](#-security)
 
@@ -24,14 +34,26 @@
 
 ## 🤔 What is a Vanity Address?
 
-A **vanity address** is a custom Ethereum address that contains a specific pattern you choose. Instead of a random address like `0x7a3f...`, you can have:
+A **vanity address** is a custom blockchain address that contains a specific pattern you choose. Instead of a random address, you can create personalized, memorable addresses:
 
-- `0xdeadbeef...` - Memorable hex words
-- `0x123456...` - Easy to recognize numbers  
-- `0xCAFE...` - Your favorite patterns
-- `0x...0000` - Addresses ending with zeros
+### Examples by Network
 
-**Why use one?** Vanity addresses are easier to recognize, verify, and remember - reducing the risk of sending funds to the wrong address!
+| Network | Random Address | Vanity Address | Pattern Used |
+|---------|---------------|----------------|--------------|
+| **Ethereum/EVM** | `0x7a3f8b2c...` | `0xdeadbeef...` | Hex words |
+| **Ethereum/EVM** | `0x9c4e2d1a...` | `0x00000000...` | Leading zeros |
+| **Solana** | `7xKXtg2CW...` | `So1anaWa11et...` | Base58 words |
+| **Bitcoin (Taproot)** | `bc1p5cyxnuxm...` | `bc1pcafe...` | Bech32m |
+| **Bitcoin (Legacy)** | `1BvBMSEYstW...` | `1Love...` | Base58 |
+| **Aptos** | `0x8f3a...` | `0x0000...` | Hex patterns |
+| **Sui** | `0x7b2c...` | `0xdead...` | Hex patterns |
+
+### Why Use a Vanity Address?
+
+✅ **Easy Recognition** - Instantly identify your address in transaction lists  
+✅ **Reduced Errors** - Less chance of sending funds to the wrong address  
+✅ **Professional Look** - Great for businesses, projects, and personal branding  
+✅ **Memorable** - Easier to remember and verify
 
 ---
 
@@ -47,14 +69,27 @@ A **vanity address** is a custom Ethereum address that contains a specific patte
 
 ---
 
+## 🔗 Supported Networks
+
+| Network | Address Format | GPU Accelerated | Notes |
+|---------|---------------|-----------------|-------|
+| ![ETH](https://img.shields.io/badge/-ETH-3C3C3D?logo=ethereum&logoColor=white) **Ethereum (EVM)** | `0x...` (hex) | ⚡ **Yes** | Supports all EVM chains (BSC, Polygon, Arbitrum, etc.) |
+| ![SOL](https://img.shields.io/badge/-SOL-9945FF?logo=solana&logoColor=white) **Solana** | Base58 | ⚡ **Yes** | Ed25519 curve |
+| ![APT](https://img.shields.io/badge/-APT-000000?logo=aptos&logoColor=white) **Aptos** | `0x...` (hex) | ⚡ **Yes** | Ed25519 curve |
+| ![SUI](https://img.shields.io/badge/-SUI-6FBCF0?logo=sui&logoColor=white) **Sui** | `0x...` (hex) | 💻 CPU | Ed25519 curve |
+| ![BTC](https://img.shields.io/badge/-BTC-F7931A?logo=bitcoin&logoColor=white) **Bitcoin** | P2TR/P2PKH/P2SH | 💻 CPU | Taproot, Legacy, SegWit |
+
+---
+
 ## ✨ Features
 
 | Feature | Description |
 |---------|-------------|
+| 🌐 **Multi-Chain Support** | Generate vanity addresses for Ethereum, Solana, Aptos, Sui, and Bitcoin! |
 | 🚀 **Zero Dependencies** | Just download and run - no Go, Python, or Node.js required! |
 | 🔒 **100% Offline** | Works completely offline - your keys never leave your device |
-| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec |
-| 💻 **CPU Fallback** | Fully functional multi-threaded CPU mode when GPU is unavailable |
+| 🎮 **GPU Acceleration** | Harness the power of your GPU with OpenCL for 40M+ addresses/sec (ETH/SOL/APT) |
+| 💻 **CPU Fallback** | Fully functional multi-threaded CPU mode for all networks |
 | 🔐 **Cryptographically Secure** | Uses OS-level secure random (`CryptGenRandom`/`/dev/urandom`) |
 | 🔄 **Continuous Mode** | Generate multiple addresses without restarting |
 | 🎨 **Beautiful TUI** | Modern terminal interface with real-time progress |
@@ -226,22 +261,36 @@ cd HexHunter
 
 ```
 HexHunter/
-├── main.go                 # Application entry point
-├── build.ps1               # Windows build script
-├── tables.bin              # Precomputed EC point tables
-├── generator/
-│   ├── generator.go        # Generator interface
-│   ├── cpu.go              # CPU implementation
-│   ├── gpu_opencl.go       # GPU OpenCL implementation
-│   ├── matcher.go          # Pattern matching logic
-│   └── kernels/
-│       └── vanity_v4.cl    # OpenCL kernel
 ├── cmd/
-│   └── gen_tables/
-│       └── main.go         # Table generation tool
-└── deps/
-    ├── opencl-headers/     # OpenCL header files
-    └── lib/                # OpenCL libraries
+│   └── hexhunter/
+│       └── main.go              # Application entry point
+├── internal/
+│   └── ui/
+│       ├── console.go           # TUI display & progress
+│       └── input.go             # User input handling
+├── pkg/
+│   └── generator/
+│       ├── generator.go         # Generator interface
+│       ├── ethereum/            # Ethereum/EVM support (GPU ⚡)
+│       │   ├── gpu.go           # OpenCL GPU implementation
+│       │   ├── matcher.go       # Pattern matching
+│       │   └── kernels/
+│       │       └── vanity.cl    # OpenCL kernel
+│       ├── solana/              # Solana support (GPU ⚡)
+│       │   ├── gpu.go           # Ed25519 GPU implementation
+│       │   ├── matcher.go       # Base58 pattern matching
+│       │   └── kernels/
+│       │       └── solana.cl    # OpenCL kernel
+│       ├── aptos/               # Aptos support (GPU ⚡)
+│       │   └── ...
+│       ├── sui/                 # Sui support (CPU)
+│       │   └── cpu.go
+│       └── bitcoin/             # Bitcoin support (CPU)
+│           └── cpu.go           # P2TR/P2PKH/P2SH
+├── deps/
+│   ├── opencl-headers/          # OpenCL header files
+│   └── lib/                     # OpenCL libraries
+├── build.ps1                    # Windows build 
 ```
 
 ---
@@ -276,7 +325,7 @@ You are free to use, modify, and distribute this software, but you must keep it 
 
 <div align="center">
 
-**Made with ❤️ for the Ethereum Community**
+**Made with ❤️ for the Crypto Community**
 
 ⭐ Star this repo if you find it useful!
 
