@@ -83,16 +83,15 @@ jobs:
         run: |
           go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
 
-      # macOS Apple Silicon (M1/M2/M3) - CPU Only
-      # OpenCL is deprecated on Apple Silicon, keep it CPU for stability
+      # macOS Apple Silicon (M1/M2/M3) - GPU Enabled (OpenCL) ⚡ [EXPERIMENTAL]
       - name: Build (macOS ARM64)
         if: matrix.goos == 'darwin' && matrix.goarch == 'arm64'
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: 1
         run: |
-          go build -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
+          go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
 
       # macOS Intel - GPU Enabled (OpenCL) ⚡
       # Intel Macs have stable OpenCL support via OpenCL.framework
