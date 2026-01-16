@@ -1,0 +1,40 @@
+// Resource file for HexHunter
+// Compile with: windres -o resource.syso resource.rc
+
+#include <winver.h>
+
+// Application Icon (optional - add icon.ico file)
+// 1 ICON "icon.ico"
+
+// Manifest
+1 RT_MANIFEST "HexHunter.manifest"
+
+// Version Information
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     0,3,0,0
+PRODUCTVERSION  0,3,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "HexHunter"
+            VALUE "FileDescription",  "HexHunter"
+            VALUE "FileVersion",      "0.3.0.0"
+            VALUE "InternalName",     "HexHunter"
+            VALUE "LegalCopyright",   "MIT License"
+            VALUE "OriginalFilename", "HexHunter.exe"
+            VALUE "ProductName",      "HexHunter"
+            VALUE "ProductVersion",   "0.3.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END
