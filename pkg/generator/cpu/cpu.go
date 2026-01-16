@@ -17,6 +17,7 @@ import (
 	"github.com/Amr-9/HexHunter/pkg/generator/ethereum"
 	"github.com/Amr-9/HexHunter/pkg/generator/solana"
 	"github.com/Amr-9/HexHunter/pkg/generator/sui"
+	"github.com/Amr-9/HexHunter/pkg/generator/tron"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
 )
@@ -102,6 +103,11 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 		matcher := bitcoin.NewBitcoinMatcher(config.Prefix, config.Suffix, addrType)
 		for i := 0; i < workers; i++ {
 			go g.workerBitcoin(ctx, matcher, addrType, resultChan, done, &closeOnce)
+		}
+	case generator.Tron:
+		matcher := tron.NewTronMatcher(config.Prefix, config.Suffix)
+		for i := 0; i < workers; i++ {
+			go g.workerTron(ctx, matcher, resultChan, done, &closeOnce)
 		}
 	default: // Ethereum
 		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix)
@@ -294,6 +300,47 @@ func (g *CPUGenerator) workerBitcoin(ctx context.Context, matcher *bitcoin.Bitco
 					Network:    generator.Bitcoin,
 					Address:    address,
 					PrivateKey: bitcoin.PrivateKeyToWIF(privKey),
+				}
+
+				select {
+				case resultChan <- result:
+					closeOnce.Do(func() { close(done) })
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+// workerTron generates Tron addresses (secp256k1 + Keccak-256 + Base58Check)
+func (g *CPUGenerator) workerTron(ctx context.Context, matcher *tron.TronMatcher, resultChan chan<- generator.Result, done chan struct{}, closeOnce *sync.Once) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		default:
+			// Generate secp256k1 key pair (same as Ethereum)
+			privateKey, err := crypto.GenerateKey()
+			if err != nil {
+				continue
+			}
+
+			atomic.AddUint64(&g.attempts, 1)
+
+			// Get uncompressed public key bytes (65 bytes: 0x04 + x + y)
+			pubKeyBytes := crypto.FromECDSAPub(&privateKey.PublicKey)
+
+			// Derive Tron address
+			address := tron.DeriveAddress(pubKeyBytes)
+
+			if matcher.Matches(address) {
+				result := generator.Result{
+					Network:    generator.Tron,
+					Address:    address,
+					PrivateKey: tron.PrivateKeyToHex(crypto.FromECDSA(privateKey)),
 				}
 
 				select {

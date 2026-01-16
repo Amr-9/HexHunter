@@ -16,6 +16,7 @@ const (
 	Aptos                   // Aptos (Ed25519, SHA3-256, Hex)
 	Sui                     // Sui (Ed25519, Blake2b-256, Hex)
 	Bitcoin                 // Bitcoin (secp256k1, SHA256+RIPEMD160, Base58/Bech32)
+	Tron                    // Tron (secp256k1, Keccak-256, Base58Check)
 )
 
 // String returns the network name.
@@ -31,6 +32,8 @@ func (n Network) String() string {
 		return "Sui"
 	case Bitcoin:
 		return "Bitcoin"
+	case Tron:
+		return "Tron"
 	default:
 		return "Unknown"
 	}

@@ -1,7 +1,7 @@
 //go:build opencl
 // +build opencl
 
-package ethereum
+package tron
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../deps/opencl-headers
@@ -23,8 +23,6 @@ import "C"
 import (
 	"context"
 	"crypto/rand"
-	"embed"
-	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -35,21 +33,23 @@ import (
 	"unsafe"
 
 	"github.com/Amr-9/HexHunter/pkg/generator"
+	"github.com/Amr-9/HexHunter/pkg/generator/ethereum"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 )
 
-//go:embed kernels/vanity_v4.cl
-var kernelSourceV3 embed.FS
+const (
+	// Batch size = Table size (2^20 = 1,048,576)
+	globalWorkSize = 1 << 20
+	localWorkSize  = 256
+	outputSize     = 64                  // Only single result now
+	tableSize      = globalWorkSize * 64 // 64 bytes per point (Affine)
+)
 
-// GetKernelSource returns the embedded vanity kernel source code.
-// This allows other packages (like Tron) to reuse the same kernel.
-func GetKernelSource() ([]byte, error) {
-	return kernelSourceV3.ReadFile("kernels/vanity_v4.cl")
-}
-
-// GPUGenerator implements the Generator interface using OpenCL GPU acceleration.
-type GPUGenerator struct {
+// TronGPUGenerator implements the Generator interface using OpenCL GPU acceleration.
+// It reuses the Ethereum kernel since both use secp256k1 + Keccak-256.
+// Matching is done on host using Base58 since kernel operates on hex bytes.
+type TronGPUGenerator struct {
 	platform C.cl_platform_id
 	device   C.cl_device_id
 	context  C.cl_context
@@ -63,8 +63,8 @@ type GPUGenerator struct {
 	bufOutput    C.cl_mem // Output address (64 bytes - single result!)
 	bufFlag      C.cl_mem // Found flag
 	bufFoundGid  C.cl_mem // Found GID
-	bufTargetPfx C.cl_mem // Target prefix pattern
-	bufTargetSfx C.cl_mem // Target suffix pattern
+	bufTargetPfx C.cl_mem // Target prefix pattern (byte range min)
+	bufTargetSfx C.cl_mem // Target suffix pattern (byte range max)
 
 	// secp256k1 curve for CPU calculations
 	curve *secp256k1.BitCurve
@@ -73,25 +73,15 @@ type GPUGenerator struct {
 	attempts  uint64
 	startTime time.Time
 
-	// matching
-	prefixBytes []byte
-	suffixBytes []byte
-	prefixIsOdd bool // true if original prefix hex length was odd
-	suffixIsOdd bool // true if original suffix hex length was odd
+	// Matching
+	matcher     *TronMatcher // For final Base58 verification
+	prefixRange *Base58Range // Byte range for prefix
+	suffixRange *Base58Range // Byte range for suffix
 }
 
-// GPUInfo contains information about an available GPU device
-type GPUInfo struct {
-	Name         string
-	Vendor       string
-	MaxWorkGroup int
-	ComputeUnits int
-	GlobalMem    uint64
-}
-
-// NewGPUGenerator creates a new GPU-based generator.
-func NewGPUGenerator() (*GPUGenerator, error) {
-	g := &GPUGenerator{
+// NewTronGPUGenerator creates a new GPU-based generator for Tron.
+func NewTronGPUGenerator() (*TronGPUGenerator, error) {
+	g := &TronGPUGenerator{
 		curve: secp256k1.S256(),
 	}
 	if err := g.initOpenCL(); err != nil {
@@ -100,11 +90,11 @@ func NewGPUGenerator() (*GPUGenerator, error) {
 	return g, nil
 }
 
-func (g *GPUGenerator) Name() string {
-	return "GPU (OpenCL - v4 BatchInv)"
+func (g *TronGPUGenerator) Name() string {
+	return "GPU (OpenCL - Tron)"
 }
 
-func (g *GPUGenerator) Stats() generator.Stats {
+func (g *TronGPUGenerator) Stats() generator.Stats {
 	attempts := atomic.LoadUint64(&g.attempts)
 	elapsed := time.Since(g.startTime).Seconds()
 	var hashRate float64
@@ -118,30 +108,23 @@ func (g *GPUGenerator) Stats() generator.Stats {
 	}
 }
 
-func (g *GPUGenerator) Start(ctx context.Context, config *generator.Config) (<-chan generator.Result, error) {
+func (g *TronGPUGenerator) Start(ctx context.Context, config *generator.Config) (<-chan generator.Result, error) {
 	resultChan := make(chan generator.Result, 1)
 	g.startTime = time.Now()
 	atomic.StoreUint64(&g.attempts, 0)
 
-	if config.Prefix != "" {
-		g.prefixIsOdd = len(config.Prefix)%2 == 1 // Track before padding!
-		g.prefixBytes, _ = hex.DecodeString(padHex(config.Prefix))
-	}
-	if config.Suffix != "" {
-		g.suffixIsOdd = len(config.Suffix)%2 == 1 // Track before padding!
-		// For suffix: pad at BEGINNING (not end!) so low nibble is correct
-		paddedSuffix := config.Suffix
-		if g.suffixIsOdd {
-			paddedSuffix = "0" + config.Suffix // Pad at start for low nibble
-		}
-		g.suffixBytes, _ = hex.DecodeString(paddedSuffix)
-	}
+	// Create matcher for final Base58 verification
+	g.matcher = NewTronMatcher(config.Prefix, config.Suffix)
+
+	// Calculate byte ranges for kernel-side pre-filtering (if possible)
+	g.prefixRange = CalculateTronPrefixRange(config.Prefix)
+	g.suffixRange = CalculateTronSuffixRange(config.Suffix)
 
 	go g.runGPU(ctx, resultChan, config)
 	return resultChan, nil
 }
 
-func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.Result, config *generator.Config) {
+func (g *TronGPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.Result, config *generator.Config) {
 	// Create buffers
 	if err := g.createBuffers(); err != nil {
 		log.Printf("GPU Buffer Error: %v", err)
@@ -149,8 +132,8 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.R
 	}
 	defer g.releaseBuffers()
 
-	// Host buffers for reading results (minimal now!)
-	hostOutput := make([]byte, 20) // Only 20 bytes for single address
+	// Host buffers for reading results
+	hostOutput := make([]byte, 20) // 20 bytes for address
 	var foundFlag uint32
 	var foundGid uint32
 
@@ -202,7 +185,7 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.R
 				return
 			}
 
-			// 5. Read ONLY the flag (4 bytes!) - this is the key optimization
+			// 5. Read the flag
 			ret = C.clEnqueueReadBuffer(g.queue, g.bufFlag, C.CL_TRUE, 0, 4,
 				unsafe.Pointer(&foundFlag), 0, nil, nil)
 			if ret != C.CL_SUCCESS {
@@ -210,7 +193,8 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.R
 				return
 			}
 
-			// 6. If found, read the result and return
+			// 6. If kernel found something (always will since we use empty pattern),
+			// verify on host with Tron-specific Base58 matching
 			if foundFlag != 0 {
 				// Read found GID
 				ret = C.clEnqueueReadBuffer(g.queue, g.bufFoundGid, C.CL_TRUE, 0, 4,
@@ -232,15 +216,23 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.R
 				foundKey := new(big.Int).Add(baseInt, big.NewInt(int64(foundGid)))
 				privBytes := pad32(foundKey.Bytes())
 
-				// Verify on CPU
+				// Get public key for Tron address derivation
 				pk, _ := crypto.ToECDSA(privBytes)
-				pub := crypto.PubkeyToAddress(pk.PublicKey)
+				pubKeyBytes := crypto.FromECDSAPub(&pk.PublicKey)
 
-				resultChan <- generator.Result{
-					Address:    pub.Hex(),
-					PrivateKey: hex.EncodeToString(privBytes),
+				// Derive Tron address (Base58Check)
+				tronAddress := DeriveAddress(pubKeyBytes)
+
+				// Verify with Tron matcher (Base58 pattern matching)
+				if g.matcher.Matches(tronAddress) {
+					resultChan <- generator.Result{
+						Address:    tronAddress,
+						PrivateKey: hex.EncodeToString(privBytes),
+						Network:    generator.Tron,
+					}
+					return
 				}
-				return
+				// If matcher didn't match, continue
 			}
 
 			// 7. Advance stats and base key
@@ -251,33 +243,25 @@ func (g *GPUGenerator) runGPU(ctx context.Context, resultChan chan<- generator.R
 }
 
 // computeBasePointJacobian computes base*G and returns it in Jacobian form (96 bytes)
-// Format: X (32 bytes, LE) | Y (32 bytes, LE) | Z (32 bytes, LE)
-func (g *GPUGenerator) computeBasePointJacobian(base *big.Int) []byte {
-	// Compute affine point: P = base * G
+func (g *TronGPUGenerator) computeBasePointJacobian(base *big.Int) []byte {
 	Px, Py := g.curve.ScalarBaseMult(base.Bytes())
-
-	// Convert to Jacobian (Z = 1)
 	result := make([]byte, 96)
 
-	// Write X in little-endian
 	xBytes := Px.Bytes()
 	for i := 0; i < len(xBytes) && i < 32; i++ {
 		result[i] = xBytes[len(xBytes)-1-i]
 	}
 
-	// Write Y in little-endian
 	yBytes := Py.Bytes()
 	for i := 0; i < len(yBytes) && i < 32; i++ {
 		result[32+i] = yBytes[len(yBytes)-1-i]
 	}
 
-	// Write Z = 1 in little-endian
-	result[64] = 1 // Z = 1
-
+	result[64] = 1
 	return result
 }
 
-func (g *GPUGenerator) initOpenCL() error {
+func (g *TronGPUGenerator) initOpenCL() error {
 	var ret C.cl_int
 	var numPlatforms C.cl_uint
 	if C.clGetPlatformIDs(0, nil, &numPlatforms) != C.CL_SUCCESS || numPlatforms == 0 {
@@ -305,10 +289,10 @@ func (g *GPUGenerator) initOpenCL() error {
 		return fmt.Errorf("queue failed")
 	}
 
-	// Load Kernel V4 (Batch Inversion)
-	kernelData, err := kernelSourceV3.ReadFile("kernels/vanity_v4.cl")
+	// Load Kernel - reuse from Ethereum package
+	kernelData, err := ethereum.GetKernelSource()
 	if err != nil {
-		return fmt.Errorf("failed to read kernel: %w", err)
+		return fmt.Errorf("failed to get kernel: %w", err)
 	}
 	src := C.CString(string(kernelData))
 	defer C.free(unsafe.Pointer(src))
@@ -321,7 +305,6 @@ func (g *GPUGenerator) initOpenCL() error {
 
 	ret = C.clBuildProgram(g.program, 1, &g.device, nil, nil, nil)
 	if ret != C.CL_SUCCESS {
-		// Get build log
 		var logSize C.size_t
 		C.clGetProgramBuildInfo(g.program, g.device, C.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
 		buildLog := make([]byte, logSize)
@@ -329,7 +312,6 @@ func (g *GPUGenerator) initOpenCL() error {
 		return fmt.Errorf("program build failed: %s", string(buildLog))
 	}
 
-	// Create Kernel
 	kName := C.CString("compute_address")
 	defer C.free(unsafe.Pointer(kName))
 	g.kernel = C.clCreateKernel(g.program, kName, &ret)
@@ -340,7 +322,7 @@ func (g *GPUGenerator) initOpenCL() error {
 	return nil
 }
 
-func (g *GPUGenerator) createBuffers() error {
+func (g *TronGPUGenerator) createBuffers() error {
 	var ret C.cl_int
 
 	// 1. BasePoint (Jacobian, 96 bytes)
@@ -349,7 +331,7 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufBasePoint failed: %d", ret)
 	}
 
-	// 2. Precomputed Table (64 MB)
+	// 2. Precomputed Table (reuse tables.bin from Ethereum)
 	tableData, err := g.loadTable()
 	if err != nil {
 		return fmt.Errorf("failed to load table: %w", err)
@@ -360,7 +342,7 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufTable failed: %d", ret)
 	}
 
-	// 3. Output (64 bytes - single result only!)
+	// 3. Output (64 bytes)
 	g.bufOutput = C.clCreateBuffer(g.context, C.CL_MEM_WRITE_ONLY, C.size_t(outputSize), nil, &ret)
 	if ret != C.CL_SUCCESS {
 		return fmt.Errorf("bufOutput failed: %d", ret)
@@ -378,37 +360,40 @@ func (g *GPUGenerator) createBuffers() error {
 		return fmt.Errorf("bufFoundGid failed: %d", ret)
 	}
 
-	// 6. Target Prefix (20 bytes max, using __constant memory)
+	// 6. Target Prefix - use MinBytes from byte range for approximate kernel filtering
+	// The kernel will filter based on these bytes, then we verify Base58 on host
 	prefixData := make([]byte, 20)
-	copy(prefixData, g.prefixBytes)
+	prefixLen := 0
+	if g.prefixRange != nil && g.prefixRange.Valid && g.prefixRange.PatternLen > 0 {
+		copy(prefixData, g.prefixRange.MinBytes)
+		// Use a portion of the byte range for filtering
+		// More bytes = more accurate but fewer matches to check on host
+		prefixLen = min(g.prefixRange.PatternLen, 3) // Use up to 3 bytes for filtering
+	}
 	g.bufTargetPfx = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
 		20, unsafe.Pointer(&prefixData[0]), &ret)
 	if ret != C.CL_SUCCESS {
 		return fmt.Errorf("bufTargetPfx failed: %d", ret)
 	}
 
-	// 7. Target Suffix (20 bytes max, using __constant memory)
+	// 7. Target Suffix - similar approach
 	suffixData := make([]byte, 20)
-	copy(suffixData, g.suffixBytes)
+	suffixLen := 0
+	if g.suffixRange != nil && g.suffixRange.Valid && g.suffixRange.PatternLen > 0 {
+		copy(suffixData, g.suffixRange.MinBytes)
+		suffixLen = min(g.suffixRange.PatternLen, 3)
+	}
 	g.bufTargetSfx = C.clCreateBuffer(g.context, C.CL_MEM_READ_ONLY|C.CL_MEM_COPY_HOST_PTR,
 		20, unsafe.Pointer(&suffixData[0]), &ret)
 	if ret != C.CL_SUCCESS {
 		return fmt.Errorf("bufTargetSfx failed: %d", ret)
 	}
 
-	// Set Kernel Args (12 total)
-	prefixLen := C.uint(len(g.prefixBytes))
-	suffixLen := C.uint(len(g.suffixBytes))
-
-	// Convert bool to uint for kernel
-	prefixOdd := C.uint(0)
-	if g.prefixIsOdd {
-		prefixOdd = 1
-	}
+	// Set Kernel Args
+	prefixLenC := C.uint(prefixLen)
+	suffixLenC := C.uint(suffixLen)
+	prefixOdd := C.uint(0) // Not using nibble matching for Tron
 	suffixOdd := C.uint(0)
-	if g.suffixIsOdd {
-		suffixOdd = 1
-	}
 
 	C.clSetKernelArg(g.kernel, 0, C.size_t(unsafe.Sizeof(g.bufBasePoint)), unsafe.Pointer(&g.bufBasePoint))
 	C.clSetKernelArg(g.kernel, 1, C.size_t(unsafe.Sizeof(g.bufTable)), unsafe.Pointer(&g.bufTable))
@@ -416,31 +401,56 @@ func (g *GPUGenerator) createBuffers() error {
 	C.clSetKernelArg(g.kernel, 3, C.size_t(unsafe.Sizeof(g.bufFlag)), unsafe.Pointer(&g.bufFlag))
 	C.clSetKernelArg(g.kernel, 4, C.size_t(unsafe.Sizeof(g.bufFoundGid)), unsafe.Pointer(&g.bufFoundGid))
 	C.clSetKernelArg(g.kernel, 5, C.size_t(unsafe.Sizeof(g.bufTargetPfx)), unsafe.Pointer(&g.bufTargetPfx))
-	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLen)), unsafe.Pointer(&prefixLen))
+	C.clSetKernelArg(g.kernel, 6, C.size_t(unsafe.Sizeof(prefixLenC)), unsafe.Pointer(&prefixLenC))
 	C.clSetKernelArg(g.kernel, 7, C.size_t(unsafe.Sizeof(g.bufTargetSfx)), unsafe.Pointer(&g.bufTargetSfx))
-	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLen)), unsafe.Pointer(&suffixLen))
+	C.clSetKernelArg(g.kernel, 8, C.size_t(unsafe.Sizeof(suffixLenC)), unsafe.Pointer(&suffixLenC))
 	C.clSetKernelArg(g.kernel, 9, C.size_t(unsafe.Sizeof(prefixOdd)), unsafe.Pointer(&prefixOdd))
 	C.clSetKernelArg(g.kernel, 10, C.size_t(unsafe.Sizeof(suffixOdd)), unsafe.Pointer(&suffixOdd))
 
 	return nil
 }
 
-// loadTable loads precomputed table from tables.bin, or generates it if missing
-func (g *GPUGenerator) loadTable() ([]byte, error) {
+func (g *TronGPUGenerator) loadTable() ([]byte, error) {
 	data, err := os.ReadFile("tables.bin")
 	if err != nil {
 		if os.IsNotExist(err) {
-			return GenerateTable()
+			return generateTable()
 		}
 		return nil, fmt.Errorf("error reading tables.bin: %w", err)
 	}
 	if len(data) != tableSize {
-		return nil, fmt.Errorf("invalid table size in tables.bin: got %d, expected %d. Please delete tables.bin and restart.", len(data), tableSize)
+		return nil, fmt.Errorf("invalid table size: got %d, expected %d", len(data), tableSize)
 	}
 	return data, nil
 }
 
-func (g *GPUGenerator) releaseBuffers() {
+func generateTable() ([]byte, error) {
+	curve := secp256k1.S256()
+	table := make([]byte, tableSize)
+
+	for i := 0; i < globalWorkSize; i++ {
+		scalar := big.NewInt(int64(i + 1))
+		px, py := curve.ScalarBaseMult(scalar.Bytes())
+
+		offset := i * 64
+		xBytes := px.Bytes()
+		yBytes := py.Bytes()
+
+		for j := 0; j < len(xBytes) && j < 32; j++ {
+			table[offset+j] = xBytes[len(xBytes)-1-j]
+		}
+		for j := 0; j < len(yBytes) && j < 32; j++ {
+			table[offset+32+j] = yBytes[len(yBytes)-1-j]
+		}
+	}
+
+	if err := os.WriteFile("tables.bin", table, 0644); err != nil {
+		return nil, fmt.Errorf("failed to save tables.bin: %w", err)
+	}
+	return table, nil
+}
+
+func (g *TronGPUGenerator) releaseBuffers() {
 	if g.bufBasePoint != nil {
 		C.clReleaseMemObject(g.bufBasePoint)
 	}
@@ -464,7 +474,7 @@ func (g *GPUGenerator) releaseBuffers() {
 	}
 }
 
-func (g *GPUGenerator) Release() {
+func (g *TronGPUGenerator) Release() {
 	if g.kernel != nil {
 		C.clReleaseKernel(g.kernel)
 	}
@@ -479,14 +489,6 @@ func (g *GPUGenerator) Release() {
 	}
 }
 
-// Helpers
-func padHex(s string) string {
-	if len(s)%2 == 1 {
-		return s + "0"
-	}
-	return s
-}
-
 func pad32(b []byte) []byte {
 	if len(b) >= 32 {
 		return b
@@ -494,9 +496,4 @@ func pad32(b []byte) []byte {
 	res := make([]byte, 32)
 	copy(res[32-len(b):], b)
 	return res
-}
-
-// GetGPUInfo returns information about available GPU devices
-func GetGPUInfo() ([]GPUInfo, error) {
-	return []GPUInfo{{Name: "Supported GPU", Vendor: "Generic"}}, nil
 }

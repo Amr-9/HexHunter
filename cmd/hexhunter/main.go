@@ -174,6 +174,8 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 	switch network {
 	case generator.Solana:
 		base = 58 // Base58 for Solana
+	case generator.Tron:
+		base = 58 // Base58 for Tron
 	case generator.Bitcoin:
 		// Bitcoin address type determines encoding:
 		// - Taproot (P2TR) / Native SegWit: Bech32/Bech32m = 32 chars
@@ -193,4 +195,3 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 	}
 	return difficulty
 }
-

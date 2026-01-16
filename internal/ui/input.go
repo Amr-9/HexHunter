@@ -13,6 +13,7 @@ import (
 	"github.com/Amr-9/HexHunter/pkg/generator/cpu"
 	"github.com/Amr-9/HexHunter/pkg/generator/ethereum"
 	"github.com/Amr-9/HexHunter/pkg/generator/solana"
+	"github.com/Amr-9/HexHunter/pkg/generator/tron"
 )
 
 // SelectedBitcoinAddressType holds the selected Bitcoin address type (global for simplicity)
@@ -90,6 +91,12 @@ func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Gener
 	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
 	fmt.Printf("    %s[5]%s ₿ Bitcoin (BTC) %s- Taproot/Legacy/SegWit%s", ColorCyan, ColorReset, ColorDim, ColorReset)
 	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
+	fmt.Printf("    %s[6]%s ₮ Tron (TRX) %s- Base58, T prefix%s", ColorCyan, ColorReset, ColorDim, ColorReset)
+	if useGPU {
+		fmt.Printf(" ⚡\n")
+	} else {
+		fmt.Printf("\n")
+	}
 
 	fmt.Printf("\n    %s→%s ", ColorGreen, ColorReset)
 	networkChoice, _ := reader.ReadString('\n')
@@ -142,6 +149,21 @@ func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Gener
 		gen = cpu.NewCPUGenerator(0)
 		// Select address type
 		SelectedBitcoinAddressType = selectBitcoinAddressType(reader)
+	case "6": // Tron
+		network = generator.Tron
+		fmt.Printf("    %s✓ Tron Selected%s\n\n", ColorGreen, ColorReset)
+		if useGPU {
+			tronGPU, err := tron.NewTronGPUGenerator()
+			if err != nil {
+				fmt.Printf("    %s⚠ Tron GPU failed: %v%s\n", ColorRed, err, ColorReset)
+				fmt.Printf("    %s↪ Using CPU...%s\n", ColorYellow, ColorReset)
+				gen = cpu.NewCPUGenerator(0)
+			} else {
+				gen = tronGPU
+			}
+		} else {
+			gen = cpu.NewCPUGenerator(0)
+		}
 	default: // Ethereum
 		network = generator.Ethereum
 		fmt.Printf("    %s✓ Ethereum Selected%s\n\n", ColorGreen, ColorReset)
@@ -175,6 +197,8 @@ func GetInputFromUser(network generator.Network) (string, string) {
 		return getAptosInput(reader)
 	case generator.Bitcoin:
 		return getBitcoinInput(reader, SelectedBitcoinAddressType)
+	case generator.Tron:
+		return getTronInput(reader)
 	default:
 		return getEthereumInput(reader)
 	}
@@ -375,4 +399,46 @@ func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (stri
 
 		return userPrefix, userSuffix
 	}
+}
+
+// getTronInput handles pattern input for Tron addresses.
+// Tron addresses use Base58 encoding and always start with 'T'.
+func getTronInput(reader *bufio.Reader) (string, string) {
+	fmt.Printf("    %sPrefix%s (after T): ", ColorCyan, ColorReset)
+	fmt.Printf("%s(Case-sensitive!)%s ", ColorYellow, ColorReset)
+	prefixInput, _ := reader.ReadString('\n')
+	prefix := strings.TrimSpace(prefixInput)
+
+	// Special validation for Tron: first character after 'T' must be uppercase A-Z
+	if prefix != "" {
+		firstChar := prefix[0]
+		isDigit := firstChar >= '0' && firstChar <= '9' // Check for any digit
+		isLower := firstChar >= 'a' && firstChar <= 'z'
+
+		if isDigit || isLower {
+			fmt.Printf("    %s⚠ Invalid prefix! First character after 'T' MUST be an UPPERCASE letter (A-Z)%s\n", ColorRed, ColorReset)
+			fmt.Printf("    %s  (Digits and lowercase letters are not possible at this position in Tron addresses)%s\n", ColorDim, ColorReset)
+			prefix = ""
+		}
+	}
+
+	if prefix != "" && !tron.IsValidBase58(prefix) {
+		invalidChars := tron.InvalidBase58Chars(prefix)
+		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+		prefix = ""
+	}
+
+	fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
+	suffixInput, _ := reader.ReadString('\n')
+	suffix := strings.TrimSpace(suffixInput)
+
+	if suffix != "" && !tron.IsValidBase58(suffix) {
+		invalidChars := tron.InvalidBase58Chars(suffix)
+		fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+		fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+		suffix = ""
+	}
+
+	return prefix, suffix
 }

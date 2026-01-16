@@ -5,46 +5,33 @@ package aptos
 
 import (
 	"embed"
-	"strings"
+
+	"github.com/Amr-9/HexHunter/pkg/generator/common"
 )
 
-//go:embed kernels/AptosVanityCL.cl
+//go:embed kernels/aptos_kernel.cl
 var aptosKernelFS embed.FS
 
-// LoadAptosKernel loads the Aptos vanity address kernel source.
-// The kernel uses Ed25519 for keypair generation and SHA3-256 for address derivation.
+// LoadAptosKernel loads and combines the Ed25519 core with Aptos-specific kernel code.
+// This approach reduces code duplication by sharing the Ed25519 implementation.
 func LoadAptosKernel() (string, error) {
-	kernelData, err := aptosKernelFS.ReadFile("kernels/AptosVanityCL.cl")
+	// 1. Load shared Ed25519 core
+	coreKernel, err := common.LoadEd25519Core()
 	if err != nil {
 		return "", err
 	}
 
-	kernelSrc := string(kernelData)
+	// 2. Load Aptos-specific kernel (SHA3-256, hex encoding, kernel function)
+	aptosData, err := aptosKernelFS.ReadFile("kernels/aptos_kernel.cl")
+	if err != nil {
+		return "", err
+	}
 
-	// Fix OpenCL address space qualifier issues for AMD/Intel GPUs
-	kernelSrc = strings.ReplaceAll(kernelSrc, "#define __generic\r\n", "")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "#define __generic\n", "")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "__generic ", "")
-	kernelSrc = strings.ReplaceAll(kernelSrc, " __generic", "")
+	// 3. Concatenate: core + network-specific
+	combined := coreKernel + "\n" + string(aptosData)
 
-	// Replace function signatures to use int* instead of fe (int[10])
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_0(fe h)", "void fe_0(int* h)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_1(fe h)", "void fe_1(int* h)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_copy(fe h, const fe f)", "void fe_copy(int* h, const int* f)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_add(fe h, const fe f, const fe g)", "void fe_add(int* h, const int* f, const int* g)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_sub(fe h, const fe f, const fe g)", "void fe_sub(int* h, const int* f, const int* g)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_mul(fe h, const fe f, const fe g)", "void fe_mul(int* h, const int* f, const int* g)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_sq(fe h, const fe f)", "void fe_sq(int* h, const int* f)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_sq2(fe h, const fe f)", "void fe_sq2(int* h, const int* f)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_invert(fe out, const fe z)", "void fe_invert(int* out, const int* z)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_neg(fe h, const fe f)", "void fe_neg(int* h, const int* f)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_cmov(fe f, const fe g, unsigned int b)", "void fe_cmov(int* f, const int* g, unsigned int b)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_cmov__constant(fe f, constant fe g, unsigned int b)", "void fe_cmov__constant(int* f, constant int* g, unsigned int b)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_tobytes(unsigned char *s, const fe h)", "void fe_tobytes(unsigned char *s, const int* h)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "int fe_isnegative(const fe f)", "int fe_isnegative(const int* f)")
-	kernelSrc = strings.ReplaceAll(kernelSrc, "void fe_pow22523(fe out, const fe z)", "void fe_pow22523(int* out, const int* z)")
-
-	return kernelSrc, nil
+	// 4. Apply common OpenCL fixes for AMD/Intel compatibility
+	return common.ApplyOpenCLFixes(combined), nil
 }
 
 // GetAptosKernelName returns the name of the main kernel function

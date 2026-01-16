@@ -74,6 +74,16 @@ func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
 		}
+	case generator.Tron:
+		// Tron format (T prefix)
+		if config.Prefix != "" {
+			fmt.Printf(" %s%sT%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
+		} else {
+			fmt.Printf(" %s%sT%s...%s", ColorBold, ColorCyan, ColorDim, ColorReset)
+		}
+		if config.Suffix != "" {
+			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
+		}
 	default:
 		// Ethereum/Aptos/Sui format (0x prefix)
 		if config.Prefix != "" {
@@ -145,6 +155,8 @@ func PrintSuccess(result generator.Result, elapsed time.Duration, attempts uint6
 		networkLabel = "◇ SUI ADDRESS"
 	case generator.Bitcoin:
 		networkLabel = "₿ BITCOIN ADDRESS"
+	case generator.Tron:
+		networkLabel = "₮ TRON ADDRESS"
 	default:
 		networkLabel = "⟠ ETHEREUM ADDRESS"
 	}
