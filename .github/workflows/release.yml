@@ -56,10 +56,9 @@ jobs:
       - name: Compile Windows Resources
         if: runner.os == 'Windows'
         shell: pwsh
+        working-directory: cmd/hexhunter
         run: |
-          Push-Location cmd/hexhunter
-          windres -o resource.syso resource.rc
-          Pop-Location
+          windres resource.rc -o resource.syso
 
       # Build Command - Platform specific
       - name: Build (Windows)

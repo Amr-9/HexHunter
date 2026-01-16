@@ -6,6 +6,7 @@
 # Generated files
 tables.bin
 wallet.txt
+*.syso
 
 # Go build cache
 *.o
