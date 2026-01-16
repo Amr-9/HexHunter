@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethvanity/pkg/generator"
 	"github.com/ethvanity/pkg/generator/aptos"
+	"github.com/ethvanity/pkg/generator/bitcoin"
 	"github.com/ethvanity/pkg/generator/ethereum"
 	"github.com/ethvanity/pkg/generator/solana"
 	"github.com/ethvanity/pkg/generator/sui"
@@ -91,6 +92,16 @@ func (g *CPUGenerator) Start(ctx context.Context, config *generator.Config) (<-c
 		matcher := sui.NewSuiMatcher(config.Prefix, config.Suffix)
 		for i := 0; i < workers; i++ {
 			go g.workerSui(ctx, matcher, resultChan, done, &closeOnce)
+		}
+	case generator.Bitcoin:
+		// Determine address type (default to Taproot)
+		addrType := config.AddressType
+		if addrType == generator.AddressTypeDefault {
+			addrType = generator.AddressTypeTaproot
+		}
+		matcher := bitcoin.NewBitcoinMatcher(config.Prefix, config.Suffix, addrType)
+		for i := 0; i < workers; i++ {
+			go g.workerBitcoin(ctx, matcher, addrType, resultChan, done, &closeOnce)
 		}
 	default: // Ethereum
 		matcher := ethereum.NewMatcher(config.Prefix, config.Suffix)
@@ -244,6 +255,45 @@ func (g *CPUGenerator) workerSui(ctx context.Context, matcher *sui.SuiMatcher, r
 					Network:    generator.Sui,
 					Address:    address,
 					PrivateKey: hex.EncodeToString(privKey.Seed()),
+				}
+
+				select {
+				case resultChan <- result:
+					closeOnce.Do(func() { close(done) })
+				default:
+				}
+				return
+			}
+		}
+	}
+}
+
+// workerBitcoin generates Bitcoin addresses (secp256k1 + SHA256/RIPEMD160 or Schnorr)
+func (g *CPUGenerator) workerBitcoin(ctx context.Context, matcher *bitcoin.BitcoinMatcher, addrType generator.AddressType, resultChan chan<- generator.Result, done chan struct{}, closeOnce *sync.Once) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		default:
+			// Generate secp256k1 key pair
+			privKey, pubKey, err := bitcoin.GenerateKeyPair()
+			if err != nil {
+				continue
+			}
+
+			atomic.AddUint64(&g.attempts, 1)
+
+			// Derive address based on type
+			address := bitcoin.DeriveAddress(pubKey, addrType)
+
+			if matcher.MatchesAfterPrefix(address) {
+				// Convert private key to WIF format
+				result := generator.Result{
+					Network:    generator.Bitcoin,
+					Address:    address,
+					PrivateKey: bitcoin.PrivateKeyToWIF(privKey),
 				}
 
 				select {

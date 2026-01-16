@@ -1,6 +1,6 @@
 // Package generator defines the interface for vanity address generation.
 // This design allows easy swapping between CPU and GPU implementations,
-// and supports multiple blockchain networks (Ethereum, Solana).
+// and supports multiple blockchain networks (Ethereum, Solana, Bitcoin).
 package generator
 
 import (
@@ -15,6 +15,7 @@ const (
 	Solana                  // Solana (Ed25519, Base58)
 	Aptos                   // Aptos (Ed25519, SHA3-256, Hex)
 	Sui                     // Sui (Ed25519, Blake2b-256, Hex)
+	Bitcoin                 // Bitcoin (secp256k1, SHA256+RIPEMD160, Base58/Bech32)
 )
 
 // String returns the network name.
@@ -28,17 +29,44 @@ func (n Network) String() string {
 		return "Aptos"
 	case Sui:
 		return "Sui"
+	case Bitcoin:
+		return "Bitcoin"
 	default:
 		return "Unknown"
 	}
 }
 
+// AddressType represents the Bitcoin address format.
+type AddressType int
+
+const (
+	AddressTypeDefault      AddressType = iota // Default for network (P2TR for Bitcoin)
+	AddressTypeTaproot                         // P2TR - Taproot (bc1p...) - Recommended
+	AddressTypeLegacy                          // P2PKH - Legacy (1...)
+	AddressTypeNestedSegWit                    // P2SH-P2WPKH - Nested SegWit (3...)
+)
+
+// String returns the address type name.
+func (a AddressType) String() string {
+	switch a {
+	case AddressTypeTaproot:
+		return "Taproot (P2TR)"
+	case AddressTypeLegacy:
+		return "Legacy (P2PKH)"
+	case AddressTypeNestedSegWit:
+		return "Nested SegWit (P2SH)"
+	default:
+		return "Default"
+	}
+}
+
 // Config holds the configuration for vanity address generation.
 type Config struct {
-	Network Network // Target network (Ethereum, Solana)
-	Prefix  string  // Desired address prefix
-	Suffix  string  // Desired address suffix
-	Workers int     // Number of concurrent workers
+	Network     Network     // Target network (Ethereum, Solana, Bitcoin)
+	AddressType AddressType // Address type (for Bitcoin: P2TR, P2PKH, P2SH)
+	Prefix      string      // Desired address prefix
+	Suffix      string      // Desired address suffix
+	Workers     int         // Number of concurrent workers
 }
 
 // Result contains a successfully found vanity address and its private key.

@@ -38,7 +38,7 @@ func PrintWelcomeBanner(version string) {
 	fmt.Println("  ║  ██║  ██║███████╗██╔╝ ██╗██║  ██║╚██████╔╝██║ ╚███║   ██║   ███████╗██║  ██║   ║")
 	fmt.Println("  ║  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝   ║")
 	fmt.Println("  ╠════════════════════════════════════════════════════════════════════════════════╣")
-	fmt.Printf("  ║%s         Vanity Address Generator %s• v%s%s                                    ║\n", ColorYellow, ColorDim, version, ColorCyan+ColorBold)
+	fmt.Printf("  ║%s         Vanity Address Generator %s• v%s%s                                        ║\n", ColorYellow, ColorDim, version, ColorCyan+ColorBold)
 	fmt.Println("  ╚════════════════════════════════════════════════════════════════════════════════╝")
 	fmt.Print(ColorReset)
 	fmt.Println()
@@ -48,16 +48,34 @@ func PrintWelcomeBanner(version string) {
 func PrintSearchInfo(config *generator.Config, difficulty uint64) {
 	fmt.Printf("\n    %s🚀 SEARCHING%s", ColorGreen+ColorBold, ColorReset)
 
-	if config.Network == generator.Solana {
-		// Solana format (no 0x prefix)
+	switch config.Network {
+	case generator.Solana:
+		// Solana format (no prefix)
 		if config.Prefix != "" {
 			fmt.Printf(" %s%s%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
 		}
 		if config.Suffix != "" {
 			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
 		}
-	} else {
-		// Ethereum/Aptos format (0x prefix)
+	case generator.Bitcoin:
+		// Bitcoin format (bc1p, 1, or 3 prefix based on address type)
+		prefix := "bc1p"
+		switch SelectedBitcoinAddressType {
+		case generator.AddressTypeLegacy:
+			prefix = "1"
+		case generator.AddressTypeNestedSegWit:
+			prefix = "3"
+		}
+		if config.Prefix != "" {
+			fmt.Printf(" %s%s%s%s%s...%s", ColorBold, ColorCyan, prefix, config.Prefix, ColorDim, ColorReset)
+		} else {
+			fmt.Printf(" %s%s%s%s...%s", ColorBold, ColorCyan, prefix, ColorDim, ColorReset)
+		}
+		if config.Suffix != "" {
+			fmt.Printf("%s...%s%s%s%s", ColorDim, ColorCyan, ColorBold, config.Suffix, ColorReset)
+		}
+	default:
+		// Ethereum/Aptos/Sui format (0x prefix)
 		if config.Prefix != "" {
 			fmt.Printf(" %s%s0x%s%s...%s", ColorBold, ColorCyan, config.Prefix, ColorDim, ColorReset)
 		}
@@ -125,6 +143,8 @@ func PrintSuccess(result generator.Result, elapsed time.Duration, attempts uint6
 		networkLabel = "◆ APTOS ADDRESS"
 	case generator.Sui:
 		networkLabel = "◇ SUI ADDRESS"
+	case generator.Bitcoin:
+		networkLabel = "₿ BITCOIN ADDRESS"
 	default:
 		networkLabel = "⟠ ETHEREUM ADDRESS"
 	}

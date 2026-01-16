@@ -27,7 +27,7 @@ func main() {
 	ui.ClearScreen()
 	ui.PrintWelcomeBanner(version)
 
-	// Select engine (CPU/GPU) and network (Ethereum/Solana)
+	// Select engine (CPU/GPU) and network initially
 	gen, network := ui.SelectEngineAndNetwork()
 	if gen == nil {
 		os.Exit(0)
@@ -47,10 +47,11 @@ func main() {
 
 		// Create configuration
 		config := &generator.Config{
-			Network: currentNetwork,
-			Prefix:  prefix,
-			Suffix:  suffix,
-			Workers: runtime.NumCPU(),
+			Network:     currentNetwork,
+			AddressType: ui.SelectedBitcoinAddressType, // Used by Bitcoin
+			Prefix:      prefix,
+			Suffix:      suffix,
+			Workers:     runtime.NumCPU(),
 		}
 
 		// Setup context with cancellation
@@ -91,11 +92,16 @@ func main() {
 				cancel()
 				signal.Stop(sigChan)
 
-				if !ui.AskToContinue() {
+				action := ui.AskToContinue()
+				switch action {
+				case ui.ActionQuit:
 					return
+				case ui.ActionSwitchNetwork:
+					fmt.Println()
+					gen, network = ui.SelectNetworkOnly()
+					currentNetwork = network
 				}
 				searchDone = true
-				fmt.Println()
 
 			case <-ticker.C:
 				stats := gen.Stats()
@@ -107,7 +113,7 @@ func main() {
 				ui.ClearLine()
 				elapsed := time.Since(startTime)
 				stats := gen.Stats()
-				fmt.Println("\n")
+				fmt.Println()
 				fmt.Printf("    %s⚠ Cancelled%s │ %s attempts │ %s\n",
 					ui.ColorYellow+ui.ColorBold, ui.ColorReset,
 					ui.FormatNumber(stats.Attempts),
@@ -115,11 +121,16 @@ func main() {
 				cancel()
 				signal.Stop(sigChan)
 
-				if !ui.AskToContinue() {
+				action := ui.AskToContinue()
+				switch action {
+				case ui.ActionQuit:
 					return
+				case ui.ActionSwitchNetwork:
+					fmt.Println()
+					gen, network = ui.SelectNetworkOnly()
+					currentNetwork = network
 				}
 				searchDone = true
-				fmt.Println()
 			}
 		}
 	}
@@ -127,10 +138,7 @@ func main() {
 
 // saveResult writes the result to a file
 func saveResult(result generator.Result, elapsed time.Duration, attempts uint64) {
-	networkName := "Ethereum"
-	if result.Network == generator.Solana {
-		networkName = "Solana"
-	}
+	networkName := result.Network.String()
 
 	content := fmt.Sprintf(`%s Vanity Address
 =======================
@@ -163,8 +171,13 @@ func estimateDifficulty(prefix, suffix string, network generator.Network) uint64
 	difficulty := uint64(1)
 	base := uint64(16) // Hex for Ethereum
 
-	if network == generator.Solana {
+	switch network {
+	case generator.Solana:
 		base = 58 // Base58 for Solana
+	case generator.Bitcoin:
+		// Bitcoin uses Bech32 (32 chars) or Base58 (58 chars) depending on address type
+		// Use average for estimation
+		base = 32
 	}
 
 	for i := 0; i < totalChars; i++ {

@@ -9,12 +9,19 @@ import (
 
 	"github.com/ethvanity/pkg/generator"
 	"github.com/ethvanity/pkg/generator/aptos"
+	"github.com/ethvanity/pkg/generator/bitcoin"
 	"github.com/ethvanity/pkg/generator/cpu"
 	"github.com/ethvanity/pkg/generator/ethereum"
 	"github.com/ethvanity/pkg/generator/solana"
 )
 
-// SelectEngineAndNetwork handles the engine (CPU/GPU) and network (Ethereum/Solana) selection.
+// SelectedBitcoinAddressType holds the selected Bitcoin address type (global for simplicity)
+var SelectedBitcoinAddressType generator.AddressType = generator.AddressTypeTaproot
+
+// selectedUseGPU tracks whether GPU was selected (for network switching)
+var selectedUseGPU bool = false
+
+// SelectEngineAndNetwork handles the engine (CPU/GPU) and network (Ethereum/Solana/Bitcoin) selection.
 // Returns the appropriate generator and selected network.
 func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 	reader := bufio.NewReader(os.Stdin)
@@ -41,14 +48,25 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 	engineChoice, _ := reader.ReadString('\n')
 	engineChoice = strings.TrimSpace(engineChoice)
 
-	useGPU := engineChoice == "2" && gpuAvailable
-	if useGPU {
+	selectedUseGPU = engineChoice == "2" && gpuAvailable
+	if selectedUseGPU {
 		fmt.Printf("    %s✓ GPU Ready%s\n\n", ColorGreen, ColorReset)
 	} else {
 		fmt.Printf("    %s✓ CPU Ready%s\n\n", ColorGreen, ColorReset)
 	}
 
-	// Step 2: Select Network
+	return selectNetworkWithEngine(reader, selectedUseGPU)
+}
+
+// SelectNetworkOnly allows switching network without re-selecting engine.
+// Uses the previously selected engine (CPU/GPU).
+func SelectNetworkOnly() (generator.Generator, generator.Network) {
+	reader := bufio.NewReader(os.Stdin)
+	return selectNetworkWithEngine(reader, selectedUseGPU)
+}
+
+// selectNetworkWithEngine handles the network selection with a specified engine.
+func selectNetworkWithEngine(reader *bufio.Reader, useGPU bool) (generator.Generator, generator.Network) {
 	fmt.Printf("    %s🌐 SELECT NETWORK%s\n", ColorPurple+ColorBold, ColorReset)
 	fmt.Printf("    %s[1]%s ⟠ Ethereum (ETH) %s- 0x prefix, Hex%s", ColorCyan, ColorReset, ColorDim, ColorReset)
 	if useGPU {
@@ -70,12 +88,14 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 	}
 	fmt.Printf("    %s[4]%s ◇ Sui (SUI) %s- 0x prefix, Hex%s", ColorCyan, ColorReset, ColorDim, ColorReset)
 	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
+	fmt.Printf("    %s[5]%s ₿ Bitcoin (BTC) %s- Taproot/Legacy/SegWit%s", ColorCyan, ColorReset, ColorDim, ColorReset)
+	fmt.Printf(" %s(CPU only)%s\n", ColorDim, ColorReset)
 
 	fmt.Printf("\n    %s→%s ", ColorGreen, ColorReset)
 	networkChoice, _ := reader.ReadString('\n')
 	networkChoice = strings.TrimSpace(networkChoice)
 
-	// Step 3: Create the appropriate generator
+	// Create the appropriate generator
 	var gen generator.Generator
 	var network generator.Network
 
@@ -115,6 +135,13 @@ func SelectEngineAndNetwork() (generator.Generator, generator.Network) {
 		fmt.Printf("    %s✓ Sui Selected%s\n\n", ColorGreen, ColorReset)
 		// Sui is CPU-only for now
 		gen = cpu.NewCPUGenerator(0)
+	case "5": // Bitcoin
+		network = generator.Bitcoin
+		fmt.Printf("    %s✓ Bitcoin Selected%s\n\n", ColorGreen, ColorReset)
+		// Bitcoin is CPU-only for now
+		gen = cpu.NewCPUGenerator(0)
+		// Select address type
+		SelectedBitcoinAddressType = selectBitcoinAddressType(reader)
 	default: // Ethereum
 		network = generator.Ethereum
 		fmt.Printf("    %s✓ Ethereum Selected%s\n\n", ColorGreen, ColorReset)
@@ -146,6 +173,8 @@ func GetInputFromUser(network generator.Network) (string, string) {
 		return getSolanaInput(reader)
 	case generator.Aptos, generator.Sui:
 		return getAptosInput(reader)
+	case generator.Bitcoin:
+		return getBitcoinInput(reader, SelectedBitcoinAddressType)
 	default:
 		return getEthereumInput(reader)
 	}
@@ -225,14 +254,32 @@ func getAptosInput(reader *bufio.Reader) (string, string) {
 	return prefix, suffix
 }
 
-// AskToContinue prompts user to continue or exit
-func AskToContinue() bool {
+// ContinueAction represents what the user wants to do after finding an address
+type ContinueAction int
+
+const (
+	ActionContinue      ContinueAction = iota // Continue with same pattern
+	ActionQuit                                // Exit the application
+	ActionSwitchNetwork                       // Switch to different network
+)
+
+// AskToContinue prompts user to continue, switch network, or exit
+func AskToContinue() ContinueAction {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("\n    %s[Enter]%s Continue searching  │  %s[Q]%s Exit\n", ColorGreen, ColorReset, ColorRed, ColorReset)
+	fmt.Printf("\n    %s[Enter]%s Continue  │  %s[N]%s New Network  │  %s[Q]%s Exit\n",
+		ColorGreen, ColorReset, ColorCyan, ColorReset, ColorRed, ColorReset)
 	fmt.Printf("    %s→%s ", ColorCyan, ColorReset)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(strings.ToLower(input))
-	return input != "q" && input != "quit" && input != "exit"
+
+	switch input {
+	case "q", "quit", "exit":
+		return ActionQuit
+	case "n", "new", "network":
+		return ActionSwitchNetwork
+	default:
+		return ActionContinue
+	}
 }
 
 // isValidHex checks if string contains only hex characters
@@ -243,4 +290,89 @@ func isValidHex(s string) bool {
 		}
 	}
 	return true
+}
+
+// selectBitcoinAddressType prompts user to select a Bitcoin address type.
+func selectBitcoinAddressType(reader *bufio.Reader) generator.AddressType {
+	fmt.Printf("    %s🔧 SELECT ADDRESS TYPE%s\n", ColorPurple+ColorBold, ColorReset)
+	fmt.Printf("    %s[1]%s ⚡ Taproot (bc1p...) %s- Recommended, Bech32m%s\n", ColorCyan, ColorReset, ColorGreen, ColorReset)
+	fmt.Printf("    %s[2]%s 🏛️  Legacy (1...) %s- Base58, Case-sensitive%s\n", ColorCyan, ColorReset, ColorDim, ColorReset)
+	fmt.Printf("    %s[3]%s 📦 Nested SegWit (3...) %s- Base58, Case-sensitive%s\n", ColorCyan, ColorReset, ColorDim, ColorReset)
+
+	fmt.Printf("\n    %s→%s ", ColorGreen, ColorReset)
+	choice, _ := reader.ReadString('\n')
+	choice = strings.TrimSpace(choice)
+
+	switch choice {
+	case "2":
+		fmt.Printf("    %s✓ Legacy (P2PKH) Selected%s\n\n", ColorGreen, ColorReset)
+		return generator.AddressTypeLegacy
+	case "3":
+		fmt.Printf("    %s✓ Nested SegWit (P2SH) Selected%s\n\n", ColorGreen, ColorReset)
+		return generator.AddressTypeNestedSegWit
+	default:
+		fmt.Printf("    %s✓ Taproot (P2TR) Selected%s\n\n", ColorGreen, ColorReset)
+		return generator.AddressTypeTaproot
+	}
+}
+
+// getBitcoinInput handles pattern input for Bitcoin addresses.
+// For Taproot: lowercase only (Bech32m)
+// For Legacy/SegWit: case-sensitive (Base58)
+func getBitcoinInput(reader *bufio.Reader, addrType generator.AddressType) (string, string) {
+	isBech32 := bitcoin.IsBech32Type(addrType)
+	prefix := bitcoin.AddressPrefix(addrType)
+
+	if isBech32 {
+		// Taproot - Bech32m (lowercase only)
+		fmt.Printf("    %sPrefix%s (after %s): ", ColorCyan, ColorReset, prefix)
+		prefixInput, _ := reader.ReadString('\n')
+		userPrefix := strings.TrimSpace(strings.ToLower(prefixInput))
+
+		if userPrefix != "" && !bitcoin.IsValidPattern(userPrefix, addrType) {
+			invalidChars := bitcoin.InvalidChars(userPrefix, addrType)
+			fmt.Printf("    %s⚠ Invalid Bech32 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 1, b, i, o)%s\n", ColorDim, ColorReset)
+			userPrefix = ""
+		}
+
+		fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
+		suffixInput, _ := reader.ReadString('\n')
+		userSuffix := strings.TrimSpace(strings.ToLower(suffixInput))
+
+		if userSuffix != "" && !bitcoin.IsValidPattern(userSuffix, addrType) {
+			invalidChars := bitcoin.InvalidChars(userSuffix, addrType)
+			fmt.Printf("    %s⚠ Invalid Bech32 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 1, b, i, o)%s\n", ColorDim, ColorReset)
+			userSuffix = ""
+		}
+
+		return userPrefix, userSuffix
+	} else {
+		// Legacy/SegWit - Base58 (case-sensitive)
+		fmt.Printf("    %sPrefix%s (after %s): ", ColorCyan, ColorReset, prefix)
+		fmt.Printf("%s(Case-sensitive!)%s ", ColorYellow, ColorReset)
+		prefixInput, _ := reader.ReadString('\n')
+		userPrefix := strings.TrimSpace(prefixInput)
+
+		if userPrefix != "" && !bitcoin.IsValidPattern(userPrefix, addrType) {
+			invalidChars := bitcoin.InvalidChars(userPrefix, addrType)
+			fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+			userPrefix = ""
+		}
+
+		fmt.Printf("    %sSuffix%s (...): ", ColorCyan, ColorReset)
+		suffixInput, _ := reader.ReadString('\n')
+		userSuffix := strings.TrimSpace(suffixInput)
+
+		if userSuffix != "" && !bitcoin.IsValidPattern(userSuffix, addrType) {
+			invalidChars := bitcoin.InvalidChars(userSuffix, addrType)
+			fmt.Printf("    %s⚠ Invalid Base58 character(s): %s%s\n", ColorRed, string(invalidChars), ColorReset)
+			fmt.Printf("    %s  (Not allowed: 0, O, I, l)%s\n", ColorDim, ColorReset)
+			userSuffix = ""
+		}
+
+		return userPrefix, userSuffix
+	}
 }
