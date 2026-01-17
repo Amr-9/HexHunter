@@ -25,7 +25,7 @@
 [![Bitcoin](https://img.shields.io/badge/Bitcoin-F7931A?style=for-the-badge&logo=bitcoin&logoColor=white)]()
 
 ---
-![HexHunter](Screenshots/hexhunter.gif)
+![HexHunter](assets/Screenshots/hexhunter.gif)
 
 **Generate custom vanity addresses for multiple blockchains with your desired prefix or suffix at blazing speeds using GPU acceleration.**
 
@@ -182,7 +182,7 @@ cd HexHunter
 
 ## ⚡ Performance
 
-![HexHunter Success](Screenshots/hexhunter_success.png)
+![HexHunter Success](assets/Screenshots/hexhunter_success.png)
 
 ### Benchmarks
 

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=HexHunter
+Comment=GPU-Accelerated Vanity Address Generator
+Exec=/usr/local/bin/HexHunter
+Icon=/usr/share/icons/hicolor/512x512/apps/hexhunter.png
+Terminal=true
+Type=Application
+Categories=Utility;Development;
+Keywords=crypto;wallet;vanity;

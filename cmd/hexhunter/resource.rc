@@ -3,8 +3,8 @@
 
 #include <winver.h>
 
-// Application Icon (optional - add icon.ico file)
-// 1 ICON "icon.ico"
+// Application Icon
+1 ICON "icon.ico"
 
 // Manifest
 1 RT_MANIFEST "HexHunter.manifest"
