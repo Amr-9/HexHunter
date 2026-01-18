@@ -105,131 +105,12 @@ jobs:
         run: |
           go build -tags opencl -trimpath -ldflags "-s -w" -o ${{ matrix.asset_name }} ./cmd/hexhunter
 
-      # Packaging - Platform specific
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Windows binary already has icon embedded, just rename/copy
-          cp ${{ matrix.asset_name }} HexHunter.exe
-
-      - name: Package (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p package
-          cp ${{ matrix.asset_name }} package/HexHunter
-          chmod +x package/HexHunter
-          cp assets/icon.png package/
-          
-          # Create launcher script that works from any location
-          cat > package/run.sh <<'LAUNCHER'
-          #!/bin/bash
-          cd "$(dirname "$0")"
-          ./HexHunter
-          LAUNCHER
-          chmod +x package/run.sh
-          
-          # Create .desktop file with proper relative path handling
-          cat > package/HexHunter.desktop <<'DESKTOP'
-          [Desktop Entry]
-          Name=HexHunter
-          Comment=GPU-Accelerated Vanity Address Generator
-          Exec=bash -c 'cd "$(dirname "%k")" && ./HexHunter'
-          Icon=icon.png
-          Terminal=true
-          Type=Application
-          Categories=Utility;Development;Crypto;
-          Keywords=crypto;wallet;vanity;ethereum;bitcoin;
-          DESKTOP
-          chmod +x package/HexHunter.desktop
-          
-          # Create README for Linux users
-          cat > package/README.txt <<'README'
-          HexHunter - GPU-Accelerated Vanity Address Generator
-          ====================================================
-          
-          QUICK START:
-          1. Open Terminal in this folder
-          2. Run: ./HexHunter
-          
-          OR: Double-click on HexHunter.desktop
-          
-          REQUIREMENTS:
-          - OpenCL runtime (for GPU acceleration):
-            sudo apt install ocl-icd-libopencl1
-          
-          - For NVIDIA GPU: sudo apt install nvidia-opencl-icd
-          - For AMD GPU: sudo apt install mesa-opencl-icd
-          README
-          
-          tar -czvf ${{ matrix.asset_name }}.tar.gz -C package .
-
-      - name: Package (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          # Create proper .app bundle structure
-          APP_NAME="HexHunter.app"
-          mkdir -p "$APP_NAME/Contents/MacOS"
-          mkdir -p "$APP_NAME/Contents/Resources"
-          
-          # Copy binary
-          cp ${{ matrix.asset_name }} "$APP_NAME/Contents/MacOS/HexHunter"
-          chmod +x "$APP_NAME/Contents/MacOS/HexHunter"
-          
-          # Copy icon
-          cp assets/icon.icns "$APP_NAME/Contents/Resources/icon.icns"
-          
-          # Create launcher script that opens Terminal
-          cat > "$APP_NAME/Contents/MacOS/launcher" <<'LAUNCHER'
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          osascript -e "tell application \"Terminal\" to do script \"cd '$DIR' && ./HexHunter; exit\""
-          LAUNCHER
-          chmod +x "$APP_NAME/Contents/MacOS/launcher"
-          
-          # Create Info.plist
-          cat > "$APP_NAME/Contents/Info.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>launcher</string>
-              <key>CFBundleIconFile</key>
-              <string>icon.icns</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.hexhunter.app</string>
-              <key>CFBundleName</key>
-              <string>HexHunter</string>
-              <key>CFBundleDisplayName</key>
-              <string>HexHunter</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>10.13</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          PLIST
-          
-          # Create zip with .app bundle
-          zip -r ${{ matrix.asset_name }}.zip "$APP_NAME"
-
-
-      # Upload Build Artifacts
+      # Upload Build Artifacts (always, for debugging)
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.os }}
-          path: |
-            *.exe
-            *.tar.gz
-            *.zip
+          path: ${{ matrix.asset_name }}
           retention-days: 3
 
   # Release job - only runs on version tags
@@ -249,10 +130,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            HexHunter-*.exe
-            HexHunter-*.tar.gz
-            HexHunter-*.zip
+          files: HexHunter-*
           name: Release ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true

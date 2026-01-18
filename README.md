@@ -145,7 +145,7 @@ cd HexHunter
 ### Quick Start
 
 ```bash
-./HexHunter.exe
+./HexHunter
 ```
 
 ### Interactive Menu

@@ -34,6 +34,7 @@ $sysoFile = "$resourceDir\resource.syso"
 $windresPath = Get-Command windres -ErrorAction SilentlyContinue
 if ($windresPath) {
     Push-Location $resourceDir
+    Copy-Item "..\..\assets\icon.ico" "icon.ico" -Force
     windres -o resource.syso resource.rc 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Resources compiled successfully!" -ForegroundColor Green
